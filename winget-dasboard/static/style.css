@@ -1,0 +1,100 @@
+/* Definicja zmiennych kolorów dla motywu jasnego (domyślny) */
+:root {
+    --kolor-tla: #f8f9fa;
+    --kolor-tekstu: #212529;
+    --kolor-tabeli-tlo: white;
+    --kolor-tabeli-ramka: #dee2e6;
+    --kolor-naglowka-h1: #343a40;
+    --kolor-linku: #007bff;
+    --kolor-cienia: rgba(0,0,0,0.075);
+    --kolor-tla-hover: #f1f1f1;
+}
+
+/* Definicja tych samych zmiennych, ale z wartościami dla motywu ciemnego */
+html.dark-mode {
+    --kolor-tla: #121212;
+    --kolor-tekstu: #e0e0e0;
+    --kolor-tabeli-tlo: #1e1e1e;
+    --kolor-tabeli-ramka: #444;
+    --kolor-naglowka-h1: #e0e0e0;
+    --kolor-linku: #58a6ff;
+    --kolor-cienia: rgba(255,255,255,0.075);
+    --kolor-tla-hover: #2a2a2a;
+}
+
+/* --- Użycie zmiennych w stylach --- */
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 2em;
+    background-color: var(--kolor-tla);
+    color: var(--kolor-tekstu);
+    transition: background-color 0.2s linear, color 0.2s linear;
+}
+
+h1 { color: var(--kolor-naglowka-h1); margin: 0; }
+h2 { color: var(--kolor-naglowka-h1); border-bottom: 2px solid var(--kolor-linku); padding-bottom: 5px; }
+a { color: var(--kolor-linku); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    box-shadow: 0 2px 4px var(--kolor-cienia);
+    background-color: var(--kolor-tabeli-tlo);
+    margin-top: 1em;
+    table-layout: fixed;
+}
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--kolor-tabeli-ramka);
+    vertical-align: middle;
+    word-wrap: break-word;
+}
+thead { color: white; }
+tbody tr:hover { background-color: var(--kolor-tla-hover); }
+
+.header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.actions-cell { display: flex; gap: 10px; }
+.back-link { display: inline-block; margin-bottom: 1em; font-size: 16px; }
+
+/* === PRZYCISKI === */
+.action-btn {
+    display: inline-block; padding: 8px 14px; font-size: 14px; font-weight: 400; text-align: center;
+    white-space: nowrap; vertical-align: middle; cursor: pointer; border: 1px solid transparent;
+    border-radius: 4px; color: #fff; text-decoration: none;
+}
+.action-btn:hover { text-decoration: none; }
+.action-btn:disabled { cursor: not-allowed; opacity: 0.65; }
+
+.btn-report { background-color: #17a2b8; border-color: #17a2b8; }
+.refresh-btn { background-color: #ffc107; border-color: #ffc107; }
+.update-btn { padding: 5px 10px; font-size: 12px; background-color: #dc3545; border-color: #dc3545; }
+.btn-secondary { background-color: #6c757d; border-color: #6c757d; }
+
+/* === STATUSY === */
+.status-pending { color: #ffc107; font-weight: bold; }
+.status-fail { color: #dc3545; font-weight: bold; }
+
+/* === NOWE STYLE DLA PRZEŁĄCZNIKA MOTYWU (POPRAWIONE) === */
+#theme-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+}
+#theme-toggle svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--kolor-tekstu);
+    stroke: var(--kolor-tekstu); /* Dodane dla ikon typu line-art */
+}
+
+/* Domyślnie (w motywie jasnym) pokaż księżyc, ukryj słońce */
+.sun-icon { display: none; }
+.moon-icon { display: block; }
+
+/* W trybie ciemnym odwróć widoczność: pokaż słońce, ukryj księżyc */
+html.dark-mode .sun-icon { display: block; }
+html.dark-mode .moon-icon { display: none; }
