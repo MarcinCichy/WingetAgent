@@ -1,11 +1,9 @@
 *.db
 /dist
 /build
-/winget-agent/dist
-/winget-agent/build
 .venv
 .idea
 .env
 *.log
 *.spec
-/winget-dasboard/__pycache__
+__pycache__/
