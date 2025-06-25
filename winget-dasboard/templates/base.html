@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} - Winget Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        // Skrypt uruchamiany wcześnie, aby uniknąć migotania motywu
+        (function() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark-mode');
+            }
+        })();
+    </script>
+</head>
+<body>
+    <div class="main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="main-footer">
+        <p>&copy; {{ current_year }} Created by Marcin Cichy</p>
+    </footer>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Logika dla przełącznika motywu - jest na każdej stronie, która go zawiera
+        const toggleButton = document.getElementById('theme-toggle');
+        const body = document.documentElement;
+        if(toggleButton) {
+            toggleButton.addEventListener('click', () => {
+                body.classList.toggle('dark-mode');
+                localStorage.setItem('theme', body.classList.contains('dark-mode') ? 'dark' : 'light');
+            });
+        }
+
+        // Blok na dodatkowe skrypty dla konkretnych podstron
+        {% block scripts %}{% endblock %}
+    });
+    </script>
+</body>
+</html>

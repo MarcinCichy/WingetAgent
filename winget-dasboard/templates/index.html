@@ -1,20 +1,8 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Winget Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script>
-        (function() {
-            const theme = localStorage.getItem('theme');
-            if (theme === 'dark') {
-                document.documentElement.classList.add('dark-mode');
-            }
-        })();
-    </script>
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}Strona główna{% endblock %}
+
+{% block content %}
     <div class="header-container">
         <h1>Komputery w sieci</h1>
         <div style="display: flex; align-items: center; gap: 15px;">
@@ -55,9 +43,11 @@
             {% endfor %}
         </tbody>
     </table>
+{% endblock %}
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
+{% block scripts %}
+    // --- POPRAWKA: Usunięto otaczające tagi <script> ---
+    // Logika dla przycisku Odśwież
     document.querySelectorAll('.refresh-btn').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
@@ -83,13 +73,4 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     });
-    const toggleButton = document.getElementById('theme-toggle');
-    const body = document.documentElement;
-    toggleButton.addEventListener('click', () => {
-        body.classList.toggle('dark-mode');
-        localStorage.setItem('theme', body.classList.contains('dark-mode') ? 'dark' : 'light');
-    });
-});
-</script>
-</body>
-</html>
+{% endblock %}
