@@ -90,4 +90,110 @@
 {% endblock %}
 
 {% block scripts %}
-    {% endblock %}
+    {# --- POPRAWKA: Dodano brakujący skrypt dla przycisku "Odśwież" --- #}
+    document.querySelectorAll('.refresh-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const computerId = this.dataset.computerId;
+            const notificationBar = document.getElementById('notification-bar');
+
+            this.textContent = 'Wysyłanie...';
+            this.disabled = true;
+
+            fetch(`/computer/${computerId}/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.textContent = 'Zlecono';
+                    notificationBar.textContent = `Zlecono odświeżenie raportu. Nowe dane będą widoczne po ponownym załadowaniu strony (za ok. 1-2 min).`;
+                    notificationBar.style.backgroundColor = '#007bff';
+                    notificationBar.style.display = 'block';
+                    setTimeout(() => { this.textContent = 'Odśwież'; this.disabled = false; }, 5000);
+                } else {
+                    this.textContent = 'Błąd!';
+                    this.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Błąd Fetch:', error);
+                this.textContent = 'Błąd sieci!';
+                this.disabled = false;
+            });
+        });
+    });
+
+    // --- Logika dla przycisków "Aktualizuj" ---
+    document.querySelectorAll('.update-btn:not(.uninstall-btn)').forEach(button => {
+        button.addEventListener('click', function() {
+            const computerId = this.dataset.computerId;
+            const updateId = this.dataset.updateId;
+            const packageId = this.dataset.packageId;
+            const appName = this.closest('tr').cells[1].textContent;
+            if (!confirm(`Czy na pewno chcesz zlecić aktualizację aplikacji "${appName}"?`)) {
+                return;
+            }
+            this.textContent = 'Zlecanie...'; this.disabled = true;
+            fetch(`/computer/${computerId}/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ package_id: packageId, update_id: updateId }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.textContent = 'Zlecono';
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    this.textContent = 'Błąd!'; this.disabled = false;
+                    alert('Wystąpił błąd po stronie serwera: ' + data.message);
+                }
+            }).catch(error => {
+                this.textContent = 'Błąd sieci!'; this.disabled = false;
+            });
+        });
+    });
+
+    // --- Logika dla przycisków "Odinstaluj" ---
+    document.querySelectorAll('.uninstall-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const computerId = this.dataset.computerId;
+            const packageId = this.dataset.packageId;
+            const appName = this.closest('tr').cells[0].textContent;
+            const notificationBar = document.getElementById('notification-bar');
+
+            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\n\nUWAGA: Ta akcja jest nieodwracalna!`)) {
+                return;
+            }
+            this.textContent = 'Zlecanie...';
+            this.disabled = true;
+
+            fetch(`/computer/${computerId}/uninstall`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ package_id: packageId }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.textContent = 'Zlecono';
+                    notificationBar.textContent = `Zlecono deinstalację dla "${appName}". Wynik będzie widoczny po następnym raporcie agenta.`;
+                    notificationBar.style.backgroundColor = '#ffc107'; // żółty
+                    notificationBar.style.display = 'block';
+                } else {
+                    this.textContent = 'Błąd!';
+                    this.disabled = false;
+                    notificationBar.textContent = `Wystąpił błąd podczas zlecania deinstalacji: ${data.message}`;
+                    notificationBar.style.backgroundColor = '#dc3545'; // czerwony
+                    notificationBar.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                this.textContent = 'Błąd sieci!';
+                this.disabled = false;
+            });
+        });
+    });
+{% endblock %}

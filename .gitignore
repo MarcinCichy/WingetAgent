@@ -7,3 +7,5 @@
 *.log
 *.spec
 __pycache__/
+full.cr.layout
+full.cr.txt
