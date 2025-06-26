@@ -6,6 +6,10 @@
     <a href="{{ url_for('computer_history', hostname=report.hostname) }}" class="back-link">&larr; Powrót do historii</a>
 {% endblock %}
 
+{% block header_main_right %}
+    <a href="{{ url_for('report_snapshot', report_id=report.id) }}" class="action-btn btn-report">Generuj raport</a>
+{% endblock %}
+
 {% block sub_header %}
     <h1>Szczegóły raportu z dnia: {{ report.report_timestamp | to_local_time }}</h1>
     <p><strong>Komputer:</strong> {{ report.hostname }} (<strong>IP:</strong> {{ report.ip_address }})</p>
