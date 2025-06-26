@@ -96,11 +96,25 @@ def computer_history(hostname):
 
 @app.route('/report/<int:report_id>')
 def view_report(report_id):
+    """Wyświetla szczegóły jednego, konkretnego raportu historycznego (migawki)."""
     db = get_db()
-    report = db.execute("SELECT r.id, r.report_timestamp, c.hostname FROM reports r JOIN computers c ON r.computer_id = c.id WHERE r.id = ?", (report_id,)).fetchone()
-    if not report: abort(404)
+    report = db.execute(
+        # --- ZMIANA JEST TUTAJ ---
+        """SELECT r.id, r.report_timestamp, c.hostname, c.ip_address 
+           FROM reports r JOIN computers c ON r.computer_id = c.id 
+           WHERE r.id = ?""",
+        (report_id,)
+    ).fetchone()
+
+    if not report:
+        abort(404)
+
     apps = db.execute("SELECT name, version, app_id FROM applications WHERE report_id = ? ORDER BY name COLLATE NOCASE", (report_id,)).fetchall()
-    updates = db.execute("SELECT name, app_id, current_version, available_version, update_type FROM updates WHERE report_id = ? ORDER BY update_type, name COLLATE NOCASE", (report_id,)).fetchall()
+    updates = db.execute(
+        "SELECT name, app_id, current_version, available_version, update_type FROM updates WHERE report_id = ? ORDER BY update_type, name COLLATE NOCASE",
+        (report_id,)
+    ).fetchall()
+
     return render_template('report_view.html', report=report, apps=apps, updates=updates)
 
 # --- GŁÓWNY ENDPOINT API DLA RAPORTÓW OD AGENTÓW ---
@@ -190,6 +204,30 @@ def task_result():
         db.execute("UPDATE updates SET status = 'Niepowodzenie' WHERE computer_id = ? AND app_id = ?", (task['computer_id'], task['payload']))
     db.commit()
     return "Result received", 200
+
+@app.route('/computer/<int:computer_id>/uninstall', methods=['POST'])
+def request_uninstall(computer_id):
+    """Endpoint wywoływany przez przycisk 'Odinstaluj'."""
+    data = request.get_json()
+    package_id = data.get('package_id')
+    if not package_id:
+        return jsonify({"status": "error", "message": "Brak ID pakietu"}), 400
+
+    db = get_db()
+    # Sprawdź, czy komputer istnieje
+    computer = db.execute("SELECT id FROM computers WHERE id = ?", (computer_id,)).fetchone()
+    if not computer:
+        return jsonify({"status": "error", "message": "Nie znaleziono komputera"}), 404
+
+    # Zleć zadanie deinstalacji
+    db.execute(
+        "INSERT INTO tasks (computer_id, command, payload) VALUES (?, ?, ?)",
+        (computer_id, 'uninstall_package', package_id)
+    )
+    db.commit()
+    logging.info(f"Zlecono zadanie deinstalacji pakietu {package_id} dla komputera ID {computer_id}")
+    return jsonify({"status": "success", "message": "Zadanie deinstalacji zlecone"})
+
 
 # --- ENDPOINTY DO GENEROWANIA RAPORTÓW ---
 def generate_report_content(computer_ids):

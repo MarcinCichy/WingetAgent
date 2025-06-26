@@ -2,20 +2,22 @@
 
 {% block title %}Szczegóły - {{ computer.hostname }}{% endblock %}
 
-{% block content %}
-    <div class="header-container">
-        <a href="{{ url_for('index') }}" class="back-link">&larr; Powrót do listy</a>
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <a href="{{ url_for('computer_history', hostname=computer.hostname) }}" class="action-btn btn-secondary">Pokaż historię</a>
-            <button id="theme-toggle" title="Zmień motyw">
-                 <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                 <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-            </button>
-        </div>
-    </div>
+{% block header_main_left %}
+    <a href="{{ url_for('index') }}" class="back-link">&larr; Powrót do listy</a>
+{% endblock %}
 
+{% block header_main_right %}
+    <button class="action-btn refresh-btn" data-computer-id="{{ computer.id }}">Odśwież</button>
+    <a href="{{ url_for('computer_history', hostname=computer.hostname) }}" class="action-btn btn-secondary">Pokaż historię</a>
+{% endblock %}
+
+{% block sub_header %}
     <h1>Szczegóły komputera: {{ computer.hostname }} (Ostatni raport)</h1>
     <p><strong>IP:</strong> {{ computer.ip_address }} | <strong>Ostatni raport:</strong> {{ computer.last_report | to_local_time }}</p>
+{% endblock %}
+
+{% block content %}
+    <div id="notification-bar" style="display: none; padding: 1rem; margin-bottom: 1rem; border-radius: 5px; color: white; font-weight: bold;"></div>
 
     <h2>Dostępne aktualizacje ({{ updates|length }})</h2>
     <table>
@@ -64,21 +66,67 @@
 
     <h2>Zainstalowane aplikacje ({{ apps|length }})</h2>
     <table>
-        <thead style="background-color: #17a2b8;"><tr><th>Nazwa</th><th>ID Aplikacji</th><th>Wersja</th></tr></thead>
+        <thead style="background-color: #17a2b8;"><tr><th>Nazwa</th><th>ID Aplikacji</th><th>Wersja</th><th>Akcja</th></tr></thead>
         <tbody>
             {% for app in apps %}
-            <tr><td>{{ app.name }}</td><td>{{ app.app_id }}</td><td>{{ app.version }}</td></tr>
+            <tr>
+                <td>{{ app.name }}</td>
+                <td>{{ app.app_id }}</td>
+                <td>{{ app.version }}</td>
+                <td>
+                    <button class="action-btn update-btn uninstall-btn"
+                            data-computer-id="{{ computer.id }}"
+                            data-package-id="{{ app.app_id }}">
+                        Odinstaluj
+                    </button>
+                </td>
+            </tr>
             {% else %}
-            <tr><td colspan="3">Brak danych o aplikacjach.</td></tr>
+            <tr><td colspan="4">Brak danych o aplikacjach.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 {% endblock %}
 
 {% block scripts %}
-    // --- POPRAWKA: Usunięto otaczające tagi <script> ---
-    // Logika dla przycisków "Aktualizuj"
-    document.querySelectorAll('.update-btn').forEach(button => {
+
+    {# --- DODANY, BRAKUJĄCY SKRYPT DLA PRZYCISKU "ODŚWIEŻ" --- #}
+    document.querySelectorAll('.refresh-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const computerId = this.dataset.computerId;
+            const notificationBar = document.getElementById('notification-bar');
+
+            this.textContent = 'Wysyłanie...';
+            this.disabled = true;
+
+            fetch(`/computer/${computerId}/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.textContent = 'Zlecono';
+                    notificationBar.textContent = `Zlecono odświeżenie raportu. Nowe dane będą widoczne za chwilę (możesz odświeżyć stronę za ok. 1 min).`;
+                    notificationBar.style.backgroundColor = '#007bff';
+                    notificationBar.style.display = 'block';
+                    setTimeout(() => { this.textContent = 'Odśwież'; this.disabled = false; }, 5000);
+                } else {
+                    this.textContent = 'Błąd!';
+                    this.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Błąd Fetch:', error);
+                this.textContent = 'Błąd sieci!';
+                this.disabled = false;
+            });
+        });
+    });
+
+    // --- Logika dla przycisków "Aktualizuj" ---
+    document.querySelectorAll('.update-btn:not(.uninstall-btn)').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
             const updateId = this.dataset.updateId;
@@ -87,8 +135,7 @@
             if (!confirm(`Czy na pewno chcesz zlecić aktualizację aplikacji "${appName}"?`)) {
                 return;
             }
-            this.textContent = 'Zlecanie...';
-            this.disabled = true;
+            this.textContent = 'Zlecanie...'; this.disabled = true;
             fetch(`/computer/${computerId}/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -100,13 +147,50 @@
                     this.textContent = 'Zlecono';
                     setTimeout(() => location.reload(), 1500);
                 } else {
-                    this.textContent = 'Błąd!';
+                    this.textContent = 'Błąd!'; this.disabled = false;
                     alert('Wystąpił błąd po stronie serwera: ' + data.message);
+                }
+            }).catch(error => {
+                this.textContent = 'Błąd sieci!'; this.disabled = false;
+            });
+        });
+    });
+
+    // --- Logika dla przycisków "Odinstaluj" ---
+    document.querySelectorAll('.uninstall-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const computerId = this.dataset.computerId;
+            const packageId = this.dataset.packageId;
+            const appName = this.closest('tr').cells[0].textContent;
+            const notificationBar = document.getElementById('notification-bar');
+
+            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\n\nUWAGA: Ta akcja jest nieodwracalna!`)) {
+                return;
+            }
+            this.textContent = 'Zlecanie...';
+            this.disabled = true;
+
+            fetch(`/computer/${computerId}/uninstall`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ package_id: packageId }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    this.textContent = 'Zlecono';
+                    notificationBar.textContent = `Zlecono deinstalację dla "${appName}". Wynik będzie widoczny po następnym raporcie agenta.`;
+                    notificationBar.style.backgroundColor = '#ffc107'; // żółty
+                    notificationBar.style.display = 'block';
+                } else {
+                    this.textContent = 'Błąd!';
                     this.disabled = false;
+                    notificationBar.textContent = `Wystąpił błąd podczas zlecania deinstalacji: ${data.message}`;
+                    notificationBar.style.backgroundColor = '#dc3545'; // czerwony
+                    notificationBar.style.display = 'block';
                 }
             })
             .catch(error => {
-                console.error('Błąd Fetch:', error);
                 this.textContent = 'Błąd sieci!';
                 this.disabled = false;
             });

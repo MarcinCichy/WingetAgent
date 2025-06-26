@@ -25,11 +25,19 @@ html.dark-mode {
 /* === OGÓLNE STYLE === */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    margin: 2em;
+    margin: 0; /* Zerujemy margines, bo paddingi kontrolują odstępy */
     background-color: var(--kolor-tla);
     color: var(--kolor-tekstu);
     transition: background-color 0.2s linear, color 0.2s linear;
-    padding-bottom: 2.5rem; /* ZMNIEJSZONY ODSTĘP */
+    /* Zwiększamy padding-top, aby zrobić miejsce na wyższy, lepki nagłówek */
+    padding-top: 10rem;
+    padding-bottom: 3rem; /* Dodaje miejsce na dole dla "lepkiej" stopki */
+}
+
+/* Kontener na główną treść, aby zachować marginesy boczne */
+.main-content {
+    padding-left: 2em;
+    padding-right: 2em;
 }
 
 h1 { color: var(--kolor-naglowka-h1); margin: 0; }
@@ -57,9 +65,40 @@ thead { color: white; }
 tbody tr:hover { background-color: var(--kolor-tla-hover); }
 
 /* === KONTENERY I UKŁAD === */
-.header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.header-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background-color: var(--kolor-tla);
+    padding: 1rem 2em;
+    border-bottom: 1px solid var(--kolor-tabeli-ramka);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-left, .header-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-sub {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--kolor-tabeli-ramka);
+}
+.header-sub h1 { font-size: 1.5em; }
+.header-sub p { margin: 0.25rem 0 0; color: #888; }
+
 .actions-cell { display: flex; gap: 10px; }
-.back-link { display: inline-block; margin-bottom: 1em; font-size: 16px; }
+.back-link { display: inline-block; font-size: 16px; margin: 0; }
 
 /* === PRZYCISKI === */
 .action-btn {
@@ -96,8 +135,8 @@ html.dark-mode .moon-icon { display: none; }
     z-index: 100;
     background-color: var(--kolor-tla);
     text-align: center;
-    padding: 0.25rem 0; /* ZMNIEJSZONY PADDING */
+    padding: 0.25rem 0;
     color: #6c757d;
-    font-size: 0.9em;
+    font-size: 0.8em;
     border-top: 1px solid var(--kolor-tabeli-ramka);
 }
