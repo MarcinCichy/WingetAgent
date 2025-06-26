@@ -25,22 +25,20 @@ html.dark-mode {
 /* === OGÓLNE STYLE === */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    margin: 0; /* Zerujemy margines, bo paddingi kontrolują odstępy */
+    margin: 0;
     background-color: var(--kolor-tla);
     color: var(--kolor-tekstu);
     transition: background-color 0.2s linear, color 0.2s linear;
-    /* Zwiększamy padding-top, aby zrobić miejsce na wyższy, lepki nagłówek */
-    padding-top: 10rem;
-    padding-bottom: 3rem; /* Dodaje miejsce na dole dla "lepkiej" stopki */
+    padding-top: 6rem;
+    padding-bottom: 3rem;
 }
 
-/* Kontener na główną treść, aby zachować marginesy boczne */
 .main-content {
     padding-left: 2em;
     padding-right: 2em;
 }
 
-h1 { color: var(--kolor-naglowka-h1); margin: 0; }
+h1 { color: var(--kolor-naglowka-h1); margin: 0; font-size: 1.75em; }
 h2 { color: var(--kolor-naglowka-h1); border-bottom: 2px solid var(--kolor-linku); padding-bottom: 5px; }
 a { color: var(--kolor-linku); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -76,27 +74,11 @@ tbody tr:hover { background-color: var(--kolor-tla-hover); }
     border-bottom: 1px solid var(--kolor-tabeli-ramka);
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
-
-.header-main {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.header-left, .header-right {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.header-sub {
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--kolor-tabeli-ramka);
-}
+.header-main { display: flex; justify-content: space-between; align-items: center; }
+.header-left, .header-right { display: flex; align-items: center; gap: 15px; }
+.header-sub { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--kolor-tabeli-ramka); }
 .header-sub h1 { font-size: 1.5em; }
 .header-sub p { margin: 0.25rem 0 0; color: #888; }
-
 .actions-cell { display: flex; gap: 10px; }
 .back-link { display: inline-block; font-size: 16px; margin: 0; }
 
@@ -118,25 +100,32 @@ tbody tr:hover { background-color: var(--kolor-tla-hover); }
 .status-pending { color: #ffc107; font-weight: bold; }
 .status-fail { color: #dc3545; font-weight: bold; }
 
-/* === PRZEŁĄCZNIK MOTYWU === */
-#theme-toggle { background: none; border: none; cursor: pointer; padding: 5px; }
-#theme-toggle svg { width: 24px; height: 24px; fill: var(--kolor-tekstu); stroke: var(--kolor-tekstu); }
-.sun-icon { display: none; }
-.moon-icon { display: block; }
-html.dark-mode .sun-icon { display: block; }
-html.dark-mode .moon-icon { display: none; }
+/* === PRZYCISKI-IKONY (USTAWIENIA, MOTYW) === */
+.icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    vertical-align: middle;
+    line-height: 0; /* Zapobiega dodatkowym odstępom */
+}
+.icon-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--kolor-tekstu);
+    stroke: var(--kolor-tekstu);
+}
+
+/* Poprawiona logika ukrywania ikon */
+#theme-toggle .sun-icon { display: none; }
+#theme-toggle .moon-icon { display: inline-block; }
+html.dark-mode #theme-toggle .sun-icon { display: inline-block; }
+html.dark-mode #theme-toggle .moon-icon { display: none; }
 
 /* === STOPKA === */
 .main-footer {
-    position: fixed;
-    left: 0;
-    bottom: 0;
-    width: 100%;
-    z-index: 100;
-    background-color: var(--kolor-tla);
-    text-align: center;
-    padding: 0.25rem 0;
-    color: #6c757d;
-    font-size: 0.8em;
+    position: fixed; left: 0; bottom: 0; width: 100%; z-index: 100;
+    background-color: var(--kolor-tla); text-align: center;
+    padding: 0.25rem 0; color: #6c757d; font-size: 0.8em;
     border-top: 1px solid var(--kolor-tabeli-ramka);
 }

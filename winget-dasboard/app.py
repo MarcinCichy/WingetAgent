@@ -114,6 +114,12 @@ def computer_history(hostname):
     return render_template('history.html', computer=computer, reports=reports)
 
 
+@app.route('/settings')
+def settings():
+    """Wyświetla stronę z ustawieniami."""
+    return render_template('settings.html')
+
+
 @app.route('/report/<int:report_id>')
 def view_report(report_id):
     db = get_db()
