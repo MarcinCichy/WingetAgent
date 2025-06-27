@@ -18,6 +18,12 @@
 {% endblock %}
 
 {% block content %}
+    {% if computer.reboot_required %}
+    <div class="notification-bar" style="background-color: #ffc107; color: #212529; padding: 1rem; margin-bottom: 1rem; border-radius: 5px; font-weight: bold;">
+        <strong>UWAGA:</strong> Ten komputer wymaga ponownego uruchomienia, aby zakończyć instalację oczekujących aktualizacji.
+    </div>
+    {% endif %}
+
     <div id="notification-bar" style="display: none; padding: 1rem; margin-bottom: 1rem; border-radius: 5px; color: white; font-weight: bold;"></div>
 
     <h2>Dostępne aktualizacje ({{ updates|length }})</h2>
@@ -38,24 +44,15 @@
                 <td>{{ 'System Operacyjny' if update.update_type == 'OS' else 'Aplikacja' }}</td>
                 <td>{{ update.name }}</td>
                 <td>
-                    {% if update.status == 'Oczekuje' %}
-                        <span class="status-pending">{{ update.status }}</span>
-                    {% elif update.status == 'Niepowodzenie' %}
-                        <span class="status-fail">{{ update.status }}</span>
-                    {% else %}
-                        <span>{{ update.status }}</span>
-                    {% endif %}
+                    {% if update.status == 'Oczekuje' %}<span class="status-pending">{{ update.status }}</span>
+                    {% elif update.status == 'Niepowodzenie' %}<span class="status-fail">{{ update.status }}</span>
+                    {% else %}<span>{{ update.status }}</span>{% endif %}
                 </td>
                 <td>{{ update.current_version or 'N/A' }}</td>
                 <td>{{ update.available_version or 'N/A' }}</td>
                 <td>
                     {% if update.update_type == 'APP' and update.status != 'Oczekuje' %}
-                    <button class="action-btn update-btn"
-                            data-computer-id="{{ computer.id }}"
-                            data-update-id="{{ update.id }}"
-                            data-package-id="{{ update.app_id }}">
-                        Aktualizuj
-                    </button>
+                    <button class="action-btn update-btn" data-computer-id="{{ computer.id }}" data-update-id="{{ update.id }}" data-package-id="{{ update.app_id }}">Aktualizuj</button>
                     {% endif %}
                 </td>
             </tr>
@@ -74,13 +71,7 @@
                 <td>{{ app.name }}</td>
                 <td>{{ app.app_id }}</td>
                 <td>{{ app.version }}</td>
-                <td>
-                    <button class="action-btn update-btn uninstall-btn"
-                            data-computer-id="{{ computer.id }}"
-                            data-package-id="{{ app.app_id }}">
-                        Odinstaluj
-                    </button>
-                </td>
+                <td><button class="action-btn update-btn uninstall-btn" data-computer-id="{{ computer.id }}" data-package-id="{{ app.app_id }}">Odinstaluj</button></td>
             </tr>
             {% else %}
             <tr><td colspan="4">Brak danych o aplikacjach.</td></tr>
@@ -90,57 +81,36 @@
 {% endblock %}
 
 {% block scripts %}
-    {# --- POPRAWKA: Dodano brakujący skrypt dla przycisku "Odśwież" --- #}
+    // --- Logika dla przycisku "Odśwież" ---
     document.querySelectorAll('.refresh-btn').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
             const notificationBar = document.getElementById('notification-bar');
-
-            this.textContent = 'Wysyłanie...';
-            this.disabled = true;
-
-            fetch(`/computer/${computerId}/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-            })
+            this.textContent = 'Wysyłanie...'; this.disabled = true;
+            fetch(`/computer/${computerId}/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
                     this.textContent = 'Zlecono';
-                    notificationBar.textContent = `Zlecono odświeżenie raportu. Nowe dane będą widoczne po ponownym załadowaniu strony (za ok. 1-2 min).`;
+                    notificationBar.textContent = `Zlecono odświeżenie. Strona przeładuje się automatycznie za ok. 20 sekund.`;
                     notificationBar.style.backgroundColor = '#007bff';
                     notificationBar.style.display = 'block';
-                    setTimeout(() => { this.textContent = 'Odśwież'; this.disabled = false; }, 5000);
+                    setTimeout(() => { location.reload(); }, 20000);
                 } else {
-                    this.textContent = 'Błąd!';
-                    this.disabled = false;
+                    this.textContent = 'Błąd!'; this.disabled = false;
                 }
-            })
-            .catch(error => {
-                console.error('Błąd Fetch:', error);
-                this.textContent = 'Błąd sieci!';
-                this.disabled = false;
-            });
+            }).catch(error => { this.textContent = 'Błąd sieci!'; this.disabled = false; });
         });
     });
 
     // --- Logika dla przycisków "Aktualizuj" ---
     document.querySelectorAll('.update-btn:not(.uninstall-btn)').forEach(button => {
         button.addEventListener('click', function() {
-            const computerId = this.dataset.computerId;
-            const updateId = this.dataset.updateId;
-            const packageId = this.dataset.packageId;
-            const appName = this.closest('tr').cells[1].textContent;
-            if (!confirm(`Czy na pewno chcesz zlecić aktualizację aplikacji "${appName}"?`)) {
-                return;
-            }
+            const computerId = this.dataset.computerId; const updateId = this.dataset.updateId;
+            const packageId = this.dataset.packageId; const appName = this.closest('tr').cells[1].textContent;
+            if (!confirm(`Czy na pewno chcesz zlecić aktualizację aplikacji "${appName}"?`)) return;
             this.textContent = 'Zlecanie...'; this.disabled = true;
-            fetch(`/computer/${computerId}/update`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ package_id: packageId, update_id: updateId }),
-            })
+            fetch(`/computer/${computerId}/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_id: packageId, update_id: updateId }) })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
@@ -150,50 +120,33 @@
                     this.textContent = 'Błąd!'; this.disabled = false;
                     alert('Wystąpił błąd po stronie serwera: ' + data.message);
                 }
-            }).catch(error => {
-                this.textContent = 'Błąd sieci!'; this.disabled = false;
-            });
+            }).catch(error => { this.textContent = 'Błąd sieci!'; this.disabled = false; });
         });
     });
 
     // --- Logika dla przycisków "Odinstaluj" ---
     document.querySelectorAll('.uninstall-btn').forEach(button => {
         button.addEventListener('click', function() {
-            const computerId = this.dataset.computerId;
-            const packageId = this.dataset.packageId;
-            const appName = this.closest('tr').cells[0].textContent;
-            const notificationBar = document.getElementById('notification-bar');
-
-            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\n\nUWAGA: Ta akcja jest nieodwracalna!`)) {
-                return;
-            }
-            this.textContent = 'Zlecanie...';
-            this.disabled = true;
-
-            fetch(`/computer/${computerId}/uninstall`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ package_id: packageId }),
-            })
+            const computerId = this.dataset.computerId; const packageId = this.dataset.packageId;
+            const appName = this.closest('tr').cells[0].textContent; const notificationBar = document.getElementById('notification-bar');
+            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\n\nUWAGA: Ta akcja jest nieodwracalna!`)) return;
+            this.textContent = 'Zlecanie...'; this.disabled = true;
+            fetch(`/computer/${computerId}/uninstall`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_id: packageId }) })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
                     this.textContent = 'Zlecono';
-                    notificationBar.textContent = `Zlecono deinstalację dla "${appName}". Wynik będzie widoczny po następnym raporcie agenta.`;
-                    notificationBar.style.backgroundColor = '#ffc107'; // żółty
+                    notificationBar.textContent = `Zlecono deinstalację dla "${appName}". Strona odświeży się automatycznie za ok. 20 sekund.`;
+                    notificationBar.style.backgroundColor = '#ffc107';
                     notificationBar.style.display = 'block';
+                    setTimeout(() => { location.reload(); }, 20000);
                 } else {
-                    this.textContent = 'Błąd!';
-                    this.disabled = false;
+                    this.textContent = 'Błąd!'; this.disabled = false;
                     notificationBar.textContent = `Wystąpił błąd podczas zlecania deinstalacji: ${data.message}`;
-                    notificationBar.style.backgroundColor = '#dc3545'; // czerwony
+                    notificationBar.style.backgroundColor = '#dc3545';
                     notificationBar.style.display = 'block';
                 }
-            })
-            .catch(error => {
-                this.textContent = 'Błąd sieci!';
-                this.disabled = false;
-            });
+            }).catch(error => { this.textContent = 'Błąd sieci!'; this.disabled = false; });
         });
     });
 {% endblock %}

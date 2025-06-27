@@ -1,8 +1,12 @@
 *.db
-/dist
-/build
-.venv
-.idea
+*.sqlite3
+/dist/
+/build/
+*.spec
+.venv/
+venv/
+.idea/
+*.pyc
 .env
 *.log
 *.spec

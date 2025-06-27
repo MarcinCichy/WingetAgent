@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS computers;
 DROP TABLE IF EXISTS applications;
 DROP TABLE IF EXISTS updates;
 DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS action_history; -- Zastępuje starą tabelę update_history
+DROP TABLE IF EXISTS action_history;
 DROP TABLE IF EXISTS reports;
 
 -- Tabela przechowująca informacje o monitorowanych komputerach
@@ -11,6 +11,7 @@ CREATE TABLE computers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hostname TEXT UNIQUE NOT NULL,
     ip_address TEXT NOT NULL,
+    reboot_required BOOLEAN NOT NULL DEFAULT 0, -- NOWA KOLUMNA
     last_report TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -57,12 +58,12 @@ CREATE TABLE tasks (
     FOREIGN KEY (computer_id) REFERENCES computers (id) ON DELETE CASCADE
 );
 
--- NOWA, UNIWERSALNA TABELA HISTORII AKCJI
+-- Uniwersalna tabela historii akcji
 CREATE TABLE action_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computer_id INTEGER NOT NULL,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    action_type TEXT NOT NULL, -- np. 'APP_UPDATE_SUCCESS', 'APP_UNINSTALL_FAILURE', 'OS_UPDATE_SUCCESS'
-    details TEXT, -- Zapisane jako JSON, np. {"name": "Notepad++", "from": "8.1", "to": "8.2"}
+    action_type TEXT NOT NULL,
+    details TEXT,
     FOREIGN KEY (computer_id) REFERENCES computers (id) ON DELETE CASCADE
 );
