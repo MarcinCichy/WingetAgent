@@ -43,18 +43,6 @@
         <p>&copy; {{ current_year }} Created by Marcin Cichy</p>
     </footer>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const toggleButton = document.getElementById('theme-toggle');
-        const htmlEl = document.documentElement;
-        if(toggleButton) {
-            toggleButton.addEventListener('click', () => {
-                htmlEl.classList.toggle('dark-mode');
-                localStorage.setItem('theme', htmlEl.classList.contains('dark-mode') ? 'dark' : 'light');
-            });
-        }
-        {% block scripts %}{% endblock %}
-    });
-    </script>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

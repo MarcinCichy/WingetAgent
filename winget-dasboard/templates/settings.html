@@ -1,15 +1,40 @@
 {% extends "base.html" %}
 
-{% block title %}Ustawienia{% endblock %}
+{% block title %}Ustawienia i Generator Agenta{% endblock %}
 
 {% block header_main_left %}
     <a href="{{ url_for('index') }}" class="back-link">&larr; Powrót do strony głównej</a>
 {% endblock %}
 
 {% block sub_header %}
-    <h1>Ustawienia Aplikacji</h1>
+    <h1>Generator Agenta</h1>
 {% endblock %}
 
 {% block content %}
-    <p>Ta strona jest w trakcie przygotowania. W przyszłości znajdą się tutaj opcje konfiguracyjne aplikacji.</p>
+    <p>Wypełnij poniższy formularz, aby wygenerować gotowy do wdrożenia plik wykonywalny <strong>agent.exe</strong>.</p>
+    <p>Plik ten będzie miał "wypalone" na stałe poniższe ustawienia, eliminując potrzebę konfiguracji na komputerach klienckich.</p>
+
+    <form action="{{ url_for('generate_exe') }}" method="POST" class="settings-form">
+        <div class="form-group">
+            <label for="api_endpoint">Adres URL serwera (API Endpoint):</label>
+            <input type="text" id="api_endpoint" name="api_endpoint" value="http://TWOJ_ADRES_IP:5000/api/report" required>
+            <small>Wprowadź publiczny lub sieciowy adres IP komputera, na którym działa serwer.</small>
+        </div>
+        <div class="form-group">
+            <label for="api_key">Klucz API (API Key):</label>
+            <input type="text" id="api_key" name="api_key" value="{{ server_api_key }}" required>
+            <small>Klucz API musi być identyczny jak ten na serwerze.</small>
+        </div>
+        <div class="form-group">
+            <label for="loop_interval">Interwał odpytywania (w sekundach):</label>
+            <input type="number" id="loop_interval" name="loop_interval" value="15" required>
+            <small>Co ile sekund agent ma pytać serwer o nowe zadania.</small>
+        </div>
+         <div class="form-group">
+            <label for="report_interval">Interwał pełnego raportu (w pętlach):</label>
+            <input type="number" id="report_interval" name="report_interval" value="240" required>
+            <small>Co ile pętli agent ma wysyłać pełny raport o stanie aplikacji (interwał * pętle = czas w sekundach).</small>
+        </div>
+        <button type="submit" class="action-btn btn-report">Generuj agent.exe</button>
+    </form>
 {% endblock %}

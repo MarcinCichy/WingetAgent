@@ -37,9 +37,11 @@ body {
     padding-right: 2em;
 }
 h1 { color: var(--kolor-naglowka-h1); margin: 0; font-size: 1.75em; }
-h2 { color: var(--kolor-naglowka-h1); border-bottom: 2px solid var(--kolor-linku); padding-bottom: 5px; }
+h2 { color: var(--kolor-naglowka-h1); border-bottom: 2px solid var(--kolor-linku); padding-bottom: 5px; margin-top: 2rem; }
 a { color: var(--kolor-linku); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* === STYLE TABEL === */
 table {
     width: 100%; border-collapse: collapse; box-shadow: 0 2px 4px var(--kolor-cienia);
     background-color: var(--kolor-tabeli-tlo); margin-top: 1em; table-layout: fixed;
@@ -50,41 +52,88 @@ th, td {
 }
 thead { color: white; }
 tbody tr:hover { background-color: var(--kolor-tla-hover); }
+
+/* === KONTENERY I UKŁAD === */
 .header-container {
     position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
     background-color: var(--kolor-tla); padding: 1rem 2em;
     border-bottom: 1px solid var(--kolor-tabeli-ramka);
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
-.header-main, .header-left, .header-right, .actions-cell { display: flex; align-items: center; gap: 15px; }
-.header-main { justify-content: space-between; }
+.header-main { display: flex; justify-content: space-between; align-items: center; }
+.header-left, .header-right { display: flex; align-items: center; gap: 15px; }
 .header-sub { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--kolor-tabeli-ramka); }
 .header-sub h1 { font-size: 1.5em; }
 .header-sub p { margin: 0.25rem 0 0; color: #888; }
+.actions-cell { display: flex; gap: 10px; }
 .back-link { display: inline-block; font-size: 16px; margin: 0; }
+
+/* === PRZYCISKI === */
 .action-btn {
     display: inline-block; padding: 8px 14px; font-size: 14px; font-weight: 400; text-align: center;
     white-space: nowrap; vertical-align: middle; cursor: pointer; border: 1px solid transparent;
     border-radius: 4px; color: #fff; text-decoration: none;
 }
-.action-btn:hover { text-decoration: none; }
+.action-btn:hover { text-decoration: none; opacity: 0.9; }
 .action-btn:disabled { cursor: not-allowed; opacity: 0.65; }
 .btn-report { background-color: #17a2b8; border-color: #17a2b8; }
 .refresh-btn { background-color: #ffc107; border-color: #ffc107; }
 .update-btn { padding: 5px 10px; font-size: 12px; background-color: #dc3545; border-color: #dc3545; }
 .btn-secondary { background-color: #6c757d; border-color: #6c757d; }
+
+/* === STATUSY === */
 .status-ok { color: #28a745; font-weight: bold; }
 .status-pending { color: #ffc107; font-weight: bold; }
 .status-fail { color: #dc3545; font-weight: bold; }
-.icon-btn { background: none; border: none; cursor: pointer; padding: 5px; vertical-align: middle; line-height: 0; }
+
+/* === PRZYCISKI-IKONY (USTAWIENIA, MOTYW) === */
+.icon-btn {
+    background: none; border: none; cursor: pointer; padding: 5px;
+    vertical-align: middle; line-height: 0;
+}
 .icon-btn svg { width: 24px; height: 24px; fill: var(--kolor-tekstu); stroke: var(--kolor-tekstu); }
 #theme-toggle .sun-icon { display: none; }
 #theme-toggle .moon-icon { display: inline-block; }
 html.dark-mode #theme-toggle .sun-icon { display: inline-block; }
 html.dark-mode #theme-toggle .moon-icon { display: none; }
+
+/* === STOPKA === */
 .main-footer {
     position: fixed; left: 0; bottom: 0; width: 100%; z-index: 100;
     background-color: var(--kolor-tla); text-align: center;
     padding: 0.25rem 0; color: #6c757d; font-size: 0.8em;
     border-top: 1px solid var(--kolor-tabeli-ramka);
+}
+
+/* === STYLE FORMULARZA === */
+.settings-form {
+    max-width: 600px;
+    margin-top: 2rem;
+    background-color: var(--kolor-tabeli-tlo);
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px var(--kolor-cienia);
+}
+.form-group {
+    margin-bottom: 1.5rem;
+}
+.form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+}
+.form-group input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--kolor-tabeli-ramka);
+    background-color: var(--kolor-tla);
+    color: var(--kolor-tekstu);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+.form-group small {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85em;
+    color: #888;
 }

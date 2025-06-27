@@ -53,38 +53,3 @@
     </table>
 {% endblock %}
 
-{% block scripts %}
-    {# --- ZMODYFIKOWANY SKRYPT DLA PRZYCISKU "ODŚWIEŻ" --- #}
-    document.querySelectorAll('.refresh-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const computerId = this.dataset.computerId;
-            const buttonCell = this.parentElement;
-
-            this.textContent = 'Zlecono...';
-            this.disabled = true;
-
-            fetch(`/computer/${computerId}/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    // Zmieniamy tekst w komórce, aby dać informację zwrotną
-                    buttonCell.innerHTML = '<span class="status-pending">Odświeżanie...</span>';
-                    // Planujemy automatyczne przeładowanie całej strony po 20 sekundach
-                    setTimeout(() => { location.reload(); }, 20000);
-                } else {
-                    this.textContent = 'Błąd!';
-                    this.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('Błąd Fetch:', error);
-                this.textContent = 'Błąd sieci!';
-                this.disabled = false;
-            });
-        });
-    });
-{% endblock %}

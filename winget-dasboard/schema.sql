@@ -1,4 +1,3 @@
--- Usuń istniejące tabele, aby uniknąć błędów przy ponownej inicjalizacji
 DROP TABLE IF EXISTS computers;
 DROP TABLE IF EXISTS applications;
 DROP TABLE IF EXISTS updates;
@@ -6,24 +5,19 @@ DROP TABLE IF EXISTS tasks;
 DROP TABLE IF EXISTS action_history;
 DROP TABLE IF EXISTS reports;
 
--- Tabela przechowująca informacje o monitorowanych komputerach
 CREATE TABLE computers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hostname TEXT UNIQUE NOT NULL,
     ip_address TEXT NOT NULL,
-    reboot_required BOOLEAN NOT NULL DEFAULT 0, -- NOWA KOLUMNA
+    reboot_required BOOLEAN NOT NULL DEFAULT 0,
     last_report TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
--- Tabela przechowująca każdą migawkę/raport w czasie
 CREATE TABLE reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computer_id INTEGER NOT NULL,
     report_timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (computer_id) REFERENCES computers (id) ON DELETE CASCADE
 );
-
--- Aplikacje przypisane do konkretnego raportu
 CREATE TABLE applications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     report_id INTEGER NOT NULL,
@@ -32,8 +26,6 @@ CREATE TABLE applications (
     app_id TEXT,
     FOREIGN KEY (report_id) REFERENCES reports (id) ON DELETE CASCADE
 );
-
--- Aktualizacje przypisane do konkretnego raportu
 CREATE TABLE updates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     report_id INTEGER NOT NULL,
@@ -45,8 +37,6 @@ CREATE TABLE updates (
     status TEXT NOT NULL DEFAULT 'Do uaktualnienia',
     FOREIGN KEY (report_id) REFERENCES reports (id) ON DELETE CASCADE
 );
-
--- Zadania do wykonania przez agentów
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computer_id INTEGER NOT NULL,
@@ -57,8 +47,6 @@ CREATE TABLE tasks (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (computer_id) REFERENCES computers (id) ON DELETE CASCADE
 );
-
--- Uniwersalna tabela historii akcji
 CREATE TABLE action_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computer_id INTEGER NOT NULL,
