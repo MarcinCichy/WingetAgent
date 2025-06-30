@@ -43,10 +43,10 @@ import sys
 WINGET_PATH = r"C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe"
 
 # --- Konfiguracja wstrzyknięta przez serwer ---
-API_ENDPOINT = "{api_endpoint}"
-API_KEY = "{api_key}"
-LOOP_INTERVAL_SECONDS = {loop_interval}
-FULL_REPORT_INTERVAL_LOOPS = {report_interval}
+API_ENDPOINT = "__API_ENDPOINT__"
+API_KEY = "__API_KEY__"
+LOOP_INTERVAL_SECONDS = __LOOP_INTERVAL__
+FULL_REPORT_INTERVAL_LOOPS = __REPORT_INTERVAL__
 
 # --- Konfiguracja logowania ---
 if getattr(sys, 'frozen', False):
@@ -99,7 +99,6 @@ def get_installed_apps():
         logging.error("Ścieżka do winget.exe jest nieprawidłowa lub plik nie istnieje: %s", WINGET_PATH)
         return []
     logging.info("Pobieranie i filtrowanie listy zainstalowanych aplikacji...")
-    # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
     command_to_run = '& "' + WINGET_PATH + '" list --accept-source-agreements'
     output = run_command(command_to_run)
     if not output: return []
@@ -135,7 +134,6 @@ def get_installed_apps():
 def get_available_updates():
     if not WINGET_PATH or not os.path.exists(WINGET_PATH): return []
     logging.info("Sprawdzanie dostępnych aktualizacji aplikacji...")
-    # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
     command_to_run = '& "' + WINGET_PATH + '" upgrade --accept-source-agreements'
     output = run_command(command_to_run)
     if not output: return []
@@ -208,13 +206,11 @@ def process_tasks(hostname):
             task_result_payload, status_final = {"task_id": task['id']}, 'błąd'
             if task['command'] == 'update_package':
                 package_id = task['payload']
-                # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
                 update_command = '& "' + WINGET_PATH + '" upgrade --id "' + package_id + '" --accept-package-agreements --accept-source-agreements --disable-interactivity'
                 if run_command(update_command) is not None:
                     status_final = 'zakończone'
             elif task['command'] == 'uninstall_package':
                 package_id = task['payload']
-                # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
                 uninstall_command = '& "' + WINGET_PATH + '" uninstall --id "' + package_id + '" --accept-source-agreements --disable-interactivity --silent'
                 if run_command(uninstall_command) is not None:
                     status_final = 'zakończone'
@@ -254,7 +250,6 @@ if __name__ == '__main__':
             time.sleep(LOOP_INTERVAL_SECONDS)
 """
 
-
 # --- Funkcje i reszta aplikacji (bez zmian) ---
 
 @app.after_request
@@ -264,7 +259,6 @@ def add_header(response):
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '-1'
     return response
-
 
 @app.template_filter('to_local_time')
 def to_local_time_filter(utc_str):
@@ -276,11 +270,9 @@ def to_local_time_filter(utc_str):
     except (ValueError, TypeError):
         return utc_str
 
-
 @app.context_processor
 def inject_year():
     return {'current_year': datetime.now(UTC).year}
-
 
 def get_db():
     if not hasattr(g, 'sqlite_db'):
@@ -288,12 +280,10 @@ def get_db():
         g.sqlite_db.row_factory = sqlite3.Row
     return g.sqlite_db
 
-
 @app.teardown_appcontext
 def close_db(error):
     if hasattr(g, 'sqlite_db'):
         g.sqlite_db.close()
-
 
 @app.cli.command('init-db')
 def init_db_command():
@@ -304,7 +294,6 @@ def init_db_command():
     db.close()
     print('Zainicjowano bazę danych.')
 
-
 def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -312,22 +301,18 @@ def require_api_key(f):
             return f(*args, **kwargs)
         else:
             abort(401)
-
     return decorated_function
-
 
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'), 'favicon.ico',
                                mimetype='image/vnd.microsoft.icon')
 
-
 @app.route('/')
 def index():
     computers = get_db().execute(
         "SELECT id, hostname, ip_address, last_report, reboot_required FROM computers ORDER BY hostname COLLATE NOCASE").fetchall()
     return render_template('index.html', computers=computers)
-
 
 @app.route('/computer/<hostname>')
 def computer_details(hostname):
@@ -346,7 +331,6 @@ def computer_details(hostname):
             "SELECT id, name, app_id, status, current_version, available_version, update_type FROM updates WHERE report_id = ? ORDER BY update_type, name COLLATE NOCASE",
             (report_id,)).fetchall()
     return render_template('computer.html', computer=computer, apps=apps, updates=updates)
-
 
 @app.route('/computer/<hostname>/history')
 def computer_history(hostname):
@@ -377,7 +361,6 @@ def view_report(report_id):
 @app.route('/settings')
 def settings():
     return render_template('settings.html', server_api_key=API_KEY)
-
 
 @app.route('/api/report', methods=['POST'])
 @require_api_key
@@ -441,7 +424,6 @@ def receive_report():
         logging.error(f"Krytyczny błąd podczas przetwarzania raportu od {hostname}: {e}", exc_info=True)
         return "Internal Server Error", 500
     return "Report received successfully", 200
-
 
 @app.route('/computer/<int:computer_id>/update', methods=['POST'])
 def request_update(computer_id):
@@ -566,8 +548,7 @@ def generate_report_content(computer_ids):
         computer = db.execute("SELECT * FROM computers WHERE id = ?", (cid,)).fetchone()
         if not computer: continue
         content.append(f"# RAPORT DLA KOMPUTERA: {computer['hostname']} ({computer['ip_address']})")
-        content.append(
-            f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
+        content.append(f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
         content.append("## Dziennik Zdarzeń (ostatnie 20)")
         history = db.execute(
             "SELECT timestamp, action_type, details FROM action_history WHERE computer_id = ? ORDER BY timestamp DESC LIMIT 20",
@@ -642,7 +623,6 @@ def generate_snapshot_report_content(report_id):
         content.append("* Brak.")
     return "\\n".join(content)
 
-
 @app.route('/settings/generate_exe', methods=['POST'])
 def generate_exe():
     if not shutil.which("pyinstaller"):
@@ -656,7 +636,8 @@ def generate_exe():
         "report_interval": int(request.form.get('report_interval', 240)),
     }
 
-    # POPRAWIONA, OSTATECZNA WERSJA - bez dodawania cudzysłowów
+    # Używamy poprawnej nazwy zmiennej: AGENT_CODE_FINAL
+    # i poprawnej metody .replace()
     final_agent_code = AGENT_CODE_FINAL.replace('__API_ENDPOINT__', config['api_endpoint']) \
                                           .replace('__API_KEY__', config['api_key']) \
                                           .replace('__LOOP_INTERVAL__', str(config['loop_interval'])) \
@@ -702,7 +683,6 @@ def generate_exe():
     finally:
         logging.info(f"Usuwanie folderu tymczasowego: {build_dir}")
         shutil.rmtree(build_dir, ignore_errors=True)
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

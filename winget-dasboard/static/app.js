@@ -1,20 +1,22 @@
+// Czekaj, aż cała strona się załaduje, zanim podepniesz skrypty do przycisków
 document.addEventListener('DOMContentLoaded', () => {
 
-    // Logika dla przełącznika motywu
+    // Logika dla przełącznika motywu - jest na każdej stronie
     const toggleButton = document.getElementById('theme-toggle');
-    if (toggleButton) {
+    const htmlEl = document.documentElement;
+    if(toggleButton) {
         toggleButton.addEventListener('click', () => {
-            document.documentElement.classList.toggle('dark-mode');
-            localStorage.setItem('theme', document.documentElement.classList.contains('dark-mode') ? 'dark' : 'light');
+            htmlEl.classList.toggle('dark-mode');
+            localStorage.setItem('theme', htmlEl.classList.contains('dark-mode') ? 'dark' : 'light');
         });
     }
 
-    // Ulepszona logika dla przycisków Odśwież
+    // Logika dla przycisku Odśwież (działa na index.html i computer.html)
     document.querySelectorAll('.refresh-btn').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
-            const buttonCell = this.closest('.actions-cell'); // Działa na stronie głównej
-            const notificationBar = document.getElementById('notification-bar'); // Działa na stronie szczegółów
+            const notificationBar = document.getElementById('notification-bar'); // Może istnieć lub nie
+            const buttonCell = this.parentElement;
 
             this.textContent = 'Wysyłanie...';
             this.disabled = true;
@@ -27,18 +29,16 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    const message = 'Zlecono odświeżenie. Dane pojawią się po następnym raporcie agenta.';
-                    // Dedykowana obsługa dla strony głównej
-                    if (buttonCell) {
-                        buttonCell.innerHTML = `<span class="status-pending" style="font-size: 12px;">${message}</span>`;
-                    }
-                    // Dedykowana obsługa dla strony szczegółów
+                    this.textContent = 'Zlecono';
+                    let message = `Zlecono odświeżenie. Strona przeładuje się automatycznie za ok. 20 sekund.`;
                     if (notificationBar) {
                         notificationBar.textContent = message;
                         notificationBar.style.backgroundColor = '#007bff';
                         notificationBar.style.display = 'block';
+                    } else if(buttonCell) {
+                         buttonCell.innerHTML = `<span class="status-pending">${message}</span>`;
                     }
-                    // Nie przeładowujemy strony, aby użytkownik widział status
+                    setTimeout(() => { location.reload(); }, 20000);
                 } else {
                     this.textContent = 'Błąd!';
                     this.disabled = false;
@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Logika dla przycisków "Aktualizuj" (bez zmian)
+    // Logika dla przycisków "Aktualizuj" (tylko na computer.html)
     document.querySelectorAll('.update-btn:not(.uninstall-btn)').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
@@ -82,20 +82,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Logika dla przycisków "Odinstaluj" (bez zmian)
+    // Logika dla przycisków "Odinstaluj" (tylko na computer.html)
     document.querySelectorAll('.uninstall-btn').forEach(button => {
         button.addEventListener('click', function() {
             const computerId = this.dataset.computerId;
             const packageId = this.dataset.packageId;
             const appName = this.closest('tr').cells[0].textContent;
             const notificationBar = document.getElementById('notification-bar');
-            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\\n\\nUWAGA: Ta akcja jest nieodwracalna!`)) return;
+            if (!confirm(`Czy na pewno chcesz zlecić deinstalację aplikacji "${appName}"?\n\nUWAGA: Ta akcja jest nieodwracalna!`)) return;
             this.textContent = 'Zlecanie...';
             this.disabled = true;
             fetch(`/computer/${computerId}/uninstall`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ package_id: package_id })
+                body: JSON.stringify({ package_id: packageId })
             })
             .then(response => response.json())
             .then(data => {
