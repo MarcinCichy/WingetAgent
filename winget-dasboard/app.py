@@ -35,18 +35,52 @@ import logging
 import subprocess
 import requests
 import sys
-
-# --- WAŻNE: KONFIGURACJA ŚCIEŻKI DO WINGET ---
-# Poniżej należy wkleić PEŁNĄ ścieżkę do pliku winget.exe na komputerze klienckim.
-# Można ją znaleźć, wpisując w CMD komendę: where winget
-# Przykład: WINGET_PATH = r"C:\\Users\\TwojaNazwa\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe"
-WINGET_PATH = r"C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe"
+import threading
 
 # --- Konfiguracja wstrzyknięta przez serwer ---
-API_ENDPOINT = "__API_ENDPOINT__"
+API_ENDPOINTS = [ep for ep in ["__API_ENDPOINT_1__", "__API_ENDPOINT_2__"] if ep.strip()]
 API_KEY = "__API_KEY__"
 LOOP_INTERVAL_SECONDS = __LOOP_INTERVAL__
 FULL_REPORT_INTERVAL_LOOPS = __REPORT_INTERVAL__
+WINGET_PATH_CONF = r"__WINGET_PATH__"
+
+# --- Automatyczne wykrywanie lokalizacji winget.exe ---
+def find_winget_path():
+    # 1. Sprawdź czy jest ustawiona ścieżka z konfiguracji (podanej przez panel)
+    if WINGET_PATH_CONF and os.path.isfile(WINGET_PATH_CONF):
+        return WINGET_PATH_CONF
+
+    # 2. Szukaj w systemowym PATH
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(path_dir, "winget.exe")
+        if os.path.isfile(candidate):
+            return candidate
+
+    # 3. Szukaj we wszystkich znanych folderach WindowsApps użytkowników
+    try:
+        import winreg
+        user_root = os.path.expandvars(r"C:\\Users")
+        if os.path.isdir(user_root):
+            for username in os.listdir(user_root):
+                winapps = os.path.join(user_root, username, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe")
+                if os.path.isfile(winapps):
+                    return winapps
+    except Exception:
+        pass
+
+    # 4. Ostatnia próba: po prostu wywołaj "where winget"
+    try:
+        result = subprocess.run(["where", "winget"], capture_output=True, text=True, encoding='utf-8')
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                if os.path.isfile(line.strip()):
+                    return line.strip()
+    except Exception:
+        pass
+
+    return None
+
+WINGET_PATH = find_winget_path()
 
 # --- Konfiguracja logowania ---
 if getattr(sys, 'frozen', False):
@@ -58,7 +92,23 @@ log_file = os.path.join(application_path, 'agent.log')
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-# --- Główny kod agenta ---
+# --- Funkcja do wykrywania AKTYWNEGO adresu IP ---
+def get_active_ip():
+    try:
+        # IP "na zewnątrz" (adres przez który agent wychodzi do sieci)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        try:
+            # Możesz tu użyć adresu dowolnego serwera, np. 8.8.8.8, nie wymaga połączenia
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        return ip
+    except Exception as e:
+        logging.error(f"Błąd pobierania aktywnego IP: {e}")
+        return "127.0.0.1"
+
 def run_command(command):
     try:
         full_command = (
@@ -70,7 +120,7 @@ def run_command(command):
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", full_command],
             capture_output=True, text=True, check=True, encoding='utf-8',
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         )
         return result.stdout
     except subprocess.CalledProcessError as e:
@@ -82,10 +132,7 @@ def run_command(command):
 
 def get_system_info():
     hostname = socket.gethostname()
-    try:
-        ip_address = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        ip_address = '127.0.0.1'
+    ip_address = get_active_ip()
     return {"hostname": hostname, "ip_address": ip_address}
 
 def get_reboot_status():
@@ -98,8 +145,8 @@ def get_installed_apps():
     if not WINGET_PATH or not os.path.exists(WINGET_PATH):
         logging.error("Ścieżka do winget.exe jest nieprawidłowa lub plik nie istnieje: %s", WINGET_PATH)
         return []
-    logging.info("Pobieranie i filtrowanie listy zainstalowanych aplikacji...")
-    command_to_run = '& "' + WINGET_PATH + '" list --accept-source-agreements'
+    logging.info(f"Pobieranie i filtrowanie listy zainstalowanych aplikacji z: {WINGET_PATH}")
+    command_to_run = f'& "{WINGET_PATH}" list --accept-source-agreements'
     output = run_command(command_to_run)
     if not output: return []
     apps, lines = [], output.strip().splitlines()
@@ -120,7 +167,7 @@ def get_installed_apps():
         if line.strip().startswith("---") or not line.strip() or line == header_line or len(line) < pos_version: continue
         try:
             name, id_ = line[:pos_id].strip(), line[pos_id:pos_version].strip()
-            version, source = line[pos_version:pos_available].strip(), line[pos_source:].strip() if pos_source != -1 else ""
+            version, source = line[pos_version:pos_available].strip(), line[pos_available:].strip() if pos_source != -1 else ""
             if not name or name.lower() == 'name': continue
             name_lower = name.lower()
             BLACKLIST_KEYWORDS = ['redistributable', 'visual c++', '.net framework']
@@ -134,7 +181,7 @@ def get_installed_apps():
 def get_available_updates():
     if not WINGET_PATH or not os.path.exists(WINGET_PATH): return []
     logging.info("Sprawdzanie dostępnych aktualizacji aplikacji...")
-    command_to_run = '& "' + WINGET_PATH + '" upgrade --accept-source-agreements'
+    command_to_run = f'& "{WINGET_PATH}" upgrade --accept-source-agreements'
     output = run_command(command_to_run)
     if not output: return []
     updates, lines = [], output.strip().splitlines()
@@ -182,46 +229,69 @@ def collect_and_report():
         "available_app_updates": get_available_updates(), "pending_os_updates": get_windows_updates()
     }
     headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
-    try:
-        logging.info("Wysyłanie pełnego raportu do %s dla %s", API_ENDPOINT, system_info['hostname'])
-        requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers, timeout=60).raise_for_status()
-        logging.info("Pełny raport wysłany pomyślnie.")
-    except Exception as e:
-        logging.error("Nie udało się wysłać pełnego raportu. Błąd: %s", e)
+    results = []
+
+    def send_to_endpoint(endpoint):
+        try:
+            logging.info("Wysyłanie pełnego raportu do %s dla %s", endpoint, system_info['hostname'])
+            r = requests.post(endpoint, data=json.dumps(payload), headers=headers, timeout=60)
+            r.raise_for_status()
+            logging.info("Pełny raport wysłany pomyślnie do %s.", endpoint)
+            results.append((endpoint, True))
+        except Exception as e:
+            logging.error("Nie udało się wysłać pełnego raportu do %s. Błąd: %s", endpoint, e)
+            results.append((endpoint, False))
+
+    threads = []
+    for endpoint in API_ENDPOINTS:
+        if endpoint.strip():
+            t = threading.Thread(target=send_to_endpoint, args=(endpoint.strip(),))
+            t.start()
+            threads.append(t)
+    for t in threads:
+        t.join()
+    return results
 
 def process_tasks(hostname):
     if not WINGET_PATH or not os.path.exists(WINGET_PATH): return
     logging.info("Sprawdzanie dostępnych zadań...")
-    base_url = API_ENDPOINT.replace('/report', '')
+    # Zadania pobieramy ze wszystkich endpointów
     headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
-    try:
-        response = requests.get(base_url + "/tasks/" + hostname, headers=headers, timeout=15)
-        response.raise_for_status()
-        tasks = response.json()
-        if not tasks:
-            logging.info("Brak nowych zadań.")
-            return
-        for task in tasks:
-            logging.info("Odebrano zadanie ID %s: %s z payloadem %s", task['id'], task['command'], task['payload'])
-            task_result_payload, status_final = {"task_id": task['id']}, 'błąd'
-            if task['command'] == 'update_package':
-                package_id = task['payload']
-                update_command = '& "' + WINGET_PATH + '" upgrade --id "' + package_id + '" --accept-package-agreements --accept-source-agreements --disable-interactivity'
-                if run_command(update_command) is not None:
-                    status_final = 'zakończone'
-            elif task['command'] == 'uninstall_package':
-                package_id = task['payload']
-                uninstall_command = '& "' + WINGET_PATH + '" uninstall --id "' + package_id + '" --accept-source-agreements --disable-interactivity --silent'
-                if run_command(uninstall_command) is not None:
-                    status_final = 'zakończone'
-            elif task['command'] == 'force_report':
-                collect_and_report()
+    tasks_list = []
+    for endpoint in API_ENDPOINTS:
+        base_url = endpoint.strip().replace('/report', '')
+        try:
+            response = requests.get(base_url + "/tasks/" + hostname, headers=headers, timeout=15)
+            response.raise_for_status()
+            tasks = response.json()
+            if tasks:
+                logging.info(f"Zadania z {base_url}: {tasks}")
+                tasks_list.extend([(base_url, t) for t in tasks])
+        except Exception as e:
+            logging.error("Nie udało się pobrać zadań z %s: %s", base_url, e)
+
+    for base_url, task in tasks_list:
+        logging.info("Odebrano zadanie ID %s: %s z payloadem %s", task['id'], task['command'], task['payload'])
+        task_result_payload, status_final = {"task_id": task['id']}, 'błąd'
+        if task['command'] == 'update_package':
+            package_id = task['payload']
+            update_command = f'& "{WINGET_PATH}" upgrade --id "{package_id}" --accept-package-agreements --accept-source-agreements --disable-interactivity'
+            if run_command(update_command) is not None:
                 status_final = 'zakończone'
-            task_result_payload['status'] = status_final
+        elif task['command'] == 'uninstall_package':
+            package_id = task['payload']
+            uninstall_command = f'& "{WINGET_PATH}" uninstall --id "{package_id}" --accept-source-agreements --disable-interactivity --silent'
+            if run_command(uninstall_command) is not None:
+                status_final = 'zakończone'
+        elif task['command'] == 'force_report':
+            collect_and_report()
+            status_final = 'zakończone'
+        task_result_payload['status'] = status_final
+        try:
             requests.post(base_url + "/tasks/result", headers=headers, data=json.dumps(task_result_payload))
             logging.info("Zakończono przetwarzanie zadania %s ze statusem: %s", task['id'], status_final)
-    except Exception as e:
-        logging.error("Nie udało się pobrać lub przetworzyć zadań: %s", e)
+        except Exception as e:
+            logging.error(f"Nie udało się wysłać wyniku zadania do {base_url}: {e}")
 
 if __name__ == '__main__':
     logging.info("Agent uruchomiony. Sprawdzanie ścieżki do winget...")
@@ -630,21 +700,24 @@ def generate_exe():
         return redirect(url_for('settings'))
 
     config = {
-        "api_endpoint": request.form.get('api_endpoint'),
+        "api_endpoint_1": request.form.get('api_endpoint_1', ''),
+        "api_endpoint_2": request.form.get('api_endpoint_2', ''),
         "api_key": request.form.get('api_key'),
         "loop_interval": int(request.form.get('loop_interval', 15)),
         "report_interval": int(request.form.get('report_interval', 240)),
+        "winget_path": request.form.get('winget_path', ''),  # jeśli masz
     }
 
-    # Używamy poprawnej nazwy zmiennej: AGENT_CODE_FINAL
-    # i poprawnej metody .replace()
-    final_agent_code = AGENT_CODE_FINAL.replace('__API_ENDPOINT__', config['api_endpoint']) \
-                                          .replace('__API_KEY__', config['api_key']) \
-                                          .replace('__LOOP_INTERVAL__', str(config['loop_interval'])) \
-                                          .replace('__REPORT_INTERVAL__', str(config['report_interval']))
+    final_agent_code = AGENT_CODE_FINAL.replace('__API_ENDPOINT_1__', config['api_endpoint_1']) \
+        .replace('__API_ENDPOINT_2__', config['api_endpoint_2']) \
+        .replace('__API_KEY__', config['api_key']) \
+        .replace('__LOOP_INTERVAL__', str(config['loop_interval'])) \
+        .replace('__REPORT_INTERVAL__', str(config['report_interval'])) \
+        .replace('__WINGET_PATH__', config['winget_path'])
 
-    build_dir = tempfile.mkdtemp()
-    script_path = os.path.join(build_dir, f"agent_{uuid.uuid4().hex}.py")
+    build_dir = os.path.abspath("C:\\tmp\\winget_agent_build")
+    os.makedirs(build_dir, exist_ok=True)
+    script_path = os.path.join(build_dir, "agent.py")  # << NAZWA agent.py
 
     try:
         with open(script_path, "w", encoding="utf-8") as f:
@@ -662,11 +735,16 @@ def generate_exe():
         result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         logging.info(f"PyInstaller output: {result.stdout}")
 
-        exe_name = os.path.basename(script_path).replace('.py', '.exe')
+        exe_name = "agent.exe"
         output_exe_path = os.path.join(build_dir, 'dist', exe_name)
 
         if not os.path.exists(output_exe_path):
-            raise FileNotFoundError(f"PyInstaller nie stworzył pliku .exe. Logi: {result.stderr}")
+            # Na wszelki wypadek, jak pyinstaller wygenerował .exe o nazwie agent.py.exe
+            exe_files = [f for f in os.listdir(os.path.join(build_dir, 'dist')) if f.endswith('.exe')]
+            if exe_files:
+                output_exe_path = os.path.join(build_dir, 'dist', exe_files[0])
+            else:
+                raise FileNotFoundError(f"PyInstaller nie stworzył pliku .exe. Logi: {result.stderr}")
 
         return send_file(
             output_exe_path,
@@ -680,9 +758,8 @@ def generate_exe():
     except Exception as e:
         logging.error(f"Wystąpił nieoczekiwany błąd: {e}", exc_info=True)
         return "Wystąpił nieoczekiwany błąd serwera.", 500
-    finally:
-        logging.info(f"Usuwanie folderu tymczasowego: {build_dir}")
-        shutil.rmtree(build_dir, ignore_errors=True)
-
+    # finally:
+    #     logging.info(f"Usuwanie folderu tymczasowego: {build_dir}")
+    #     shutil.rmtree(build_dir, ignore_errors=True)
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

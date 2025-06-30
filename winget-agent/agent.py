@@ -5,265 +5,281 @@ import requests
 import time
 import logging
 import os
+import sys
+import threading
 
-# --- Konfiguracja ---
-# WAŻNE: Ustaw poprawny adres URL serwera API oraz klucz!
-API_ENDPOINT = "http://192.168.93.133:5000/api/report"
-API_KEY = "test1234"
-# Agent będzie działał w pętli co 60 sekund, sprawdzając zadania
+# --- KONFIGURACJA (podstawiana przez panel) ---
+API_ENDPOINTS = ["http://TWOJ_ADRES_IP:5000/api/report"]
+API_KEY = "TWÓJ_KLUCZ_API"
 LOOP_INTERVAL_SECONDS = 60
-# Pełny raport będzie wysyłany co 60 pętli (60 * 60s = 1 godzina)
 FULL_REPORT_INTERVAL_LOOPS = 60
+WINGET_PATH_CONF = r""
 
-# Konfiguracja logowania do pliku w tym samym folderze co skrypt
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'agent.log')
+# --- Automatyczne wykrywanie lokalizacji winget.exe ---
+def find_winget_path():
+    # 1. Sprawdź czy jest ustawiona ścieżka z konfiguracji (panel)
+    if WINGET_PATH_CONF and os.path.isfile(WINGET_PATH_CONF):
+        return WINGET_PATH_CONF
+
+    # 2. Szukaj w systemowym PATH
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(path_dir, "winget.exe")
+        if os.path.isfile(candidate):
+            return candidate
+
+    # 3. Szukaj we wszystkich znanych folderach WindowsApps użytkowników
+    try:
+        user_root = os.path.expandvars(r"C:\\Users")
+        if os.path.isdir(user_root):
+            for username in os.listdir(user_root):
+                winapps = os.path.join(user_root, username, "AppData", "Local", "Microsoft", "WindowsApps", "winget.exe")
+                if os.path.isfile(winapps):
+                    return winapps
+    except Exception:
+        pass
+
+    # 4. Ostatnia próba: po prostu wywołaj "where winget"
+    try:
+        result = subprocess.run(["where", "winget"], capture_output=True, text=True, encoding='utf-8')
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                if os.path.isfile(line.strip()):
+                    return line.strip()
+    except Exception:
+        pass
+
+    return None
+
+WINGET_PATH = find_winget_path()
+
+# --- Logowanie ---
+if getattr(sys, 'frozen', False):
+    application_path = os.path.dirname(sys.executable)
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+log_file = os.path.join(application_path, 'agent.log')
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def get_active_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        return ip
+    except Exception as e:
+        logging.error(f"Błąd pobierania aktywnego IP: {e}")
+        return "127.0.0.1"
 
 def run_command(command):
-    """Uruchamia polecenie w powłoce, wymuszając kodowanie UTF-8 na dwa sposoby dla maksymalnej kompatybilności."""
     try:
         full_command = (
+            "[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US'); "
             "[System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
             "$OutputEncoding = [System.Text.Encoding]::UTF8; "
-            f"{command}"
+            + command
         )
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", full_command],
             capture_output=True, text=True, check=True, encoding='utf-8',
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         )
         return result.stdout
     except subprocess.CalledProcessError as e:
-        logging.error(f"Błąd podczas wykonywania polecenia '{command}': {e.stderr}")
+        logging.error("Błąd podczas wykonywania polecenia '%s': %s", command, e.stderr)
         return None
     except FileNotFoundError:
-        logging.error("Nie znaleziono polecenia 'powershell.exe'. Upewnij się, że jest w zmiennej środowiskowej PATH.")
+        logging.error("Nie znaleziono polecenia 'powershell.exe'.")
         return None
 
-
 def get_system_info():
-    """Pobiera podstawowe informacje o systemie."""
     hostname = socket.gethostname()
-    try:
-        ip_address = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        ip_address = '127.0.0.1'
+    ip_address = get_active_ip()
     return {"hostname": hostname, "ip_address": ip_address}
 
+def get_reboot_status():
+    logging.info("Sprawdzanie statusu wymaganego restartu...")
+    command = "(New-Object -ComObject Microsoft.Update.SystemInfo).RebootRequired"
+    output = run_command(command)
+    return "true" in output.lower() if output else False
 
 def get_installed_apps():
-    """Pobiera listę zainstalowanych aplikacji, z zaawansowanym filtrowaniem aplikacji systemowych."""
-    logging.info("Pobieranie i filtrowanie listy zainstalowanych aplikacji (metoda zaawansowana)...")
-    BLACKLIST_KEYWORDS = [
-        'redistributable', 'visual c++', '.net framework', 'update for windows',
-        'host controller', 'java runtime', 'driver', 'odbc', 'provider', 'service pack',
-        'hevc', 'heif', 'vp9', 'webp'
-    ]
-    output = run_command("winget list --accept-source-agreements")
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH):
+        logging.error("Ścieżka do winget.exe jest nieprawidłowa lub plik nie istnieje: %s", WINGET_PATH)
+        return []
+    logging.info(f"Pobieranie i filtrowanie listy zainstalowanych aplikacji z: {WINGET_PATH}")
+    command_to_run = f'& "{WINGET_PATH}" list --accept-source-agreements'
+    output = run_command(command_to_run)
     if not output: return []
-
-    apps, lines = [], output.strip().split('\n')
+    apps, lines = [], output.strip().splitlines()
     header_line = ""
     for line in lines:
         if "Name" in line and "Id" in line and "Version" in line:
             header_line = line
             break
-    if not header_line: return []
-
+    if not header_line:
+        logging.warning("Nie znaleziono linii nagłówka w wyniku polecenia winget list.")
+        return []
     pos_id = header_line.find("Id")
     pos_version = header_line.find("Version")
     pos_available = header_line.find("Available")
     pos_source = header_line.find("Source")
     if pos_available == -1: pos_available = pos_source if pos_source != -1 else len(header_line) + 20
-
     for line in lines:
-        if line.strip().startswith("---") or line.strip() == "" or line == header_line or len(line) < pos_version:
-            continue
+        if line.strip().startswith("---") or not line.strip() or line == header_line or len(line) < pos_version: continue
         try:
-            name = line[:pos_id].strip()
-            id_ = line[pos_id:pos_version].strip()
-            version = line[pos_version:pos_available].strip()
-            source = line[pos_source:].strip() if pos_source != -1 else ""
+            name, id_ = line[:pos_id].strip(), line[pos_id:pos_version].strip()
+            version, source = line[pos_version:pos_available].strip(), line[pos_available:].strip() if pos_source != -1 else ""
             if not name or name.lower() == 'name': continue
-
-            is_microsoft_app = id_.lower().startswith('microsoft.') and 'office' not in id_.lower()
-            is_msstore_app = source.lower() == 'msstore'
-            is_blacklisted = any(keyword in name.lower() for keyword in BLACKLIST_KEYWORDS)
-
-            if not is_microsoft_app and not is_msstore_app and not is_blacklisted:
-                apps.append({"name": name, "id": id_, "version": version})
+            name_lower = name.lower()
+            BLACKLIST_KEYWORDS = ['redistributable', 'visual c++', '.net framework']
+            if any(k in name_lower for k in BLACKLIST_KEYWORDS): continue
+            apps.append({"name": name, "id": id_, "version": version})
         except Exception as e:
-            logging.warning(f"Nie udało się sparsować linii aplikacji: {line} | Błąd: {e}")
-
-    logging.info(f"Znaleziono {len(apps)} przefiltrowanych aplikacji (bez systemowych).")
+            logging.warning("Nie udało się sparsować linii aplikacji: %s | Błąd: %s", line, e)
+    logging.info("Znaleziono %d przefiltrowanych aplikacji.", len(apps))
     return apps
 
-
 def get_available_updates():
-    """Pobiera listę dostępnych aktualizacji aplikacji, używając inteligentnego parsowania."""
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH): return []
     logging.info("Sprawdzanie dostępnych aktualizacji aplikacji...")
-    output = run_command("winget upgrade --accept-source-agreements")
+    command_to_run = f'& "{WINGET_PATH}" upgrade --accept-source-agreements'
+    output = run_command(command_to_run)
     if not output: return []
-
-    updates, lines = [], output.strip().split('\n')
+    updates, lines = [], output.strip().splitlines()
     header_line = ""
     for line in lines:
         if "Name" in line and "Id" in line and "Version" in line:
             header_line = line
             break
-    if not header_line: return []
-
+    if not header_line:
+        logging.warning("Nie znaleziono linii nagłówka w wyniku polecenia winget upgrade.")
+        return []
     pos_id = header_line.find("Id")
     pos_version = header_line.find("Version")
     pos_available = header_line.find("Available")
     pos_source = header_line.find("Source")
-
     for line in lines:
-        if line.strip().startswith("---") or "upgrades available" in line.lower() or line == header_line or len(
-                line) < pos_available:
-            continue
+        if line.strip().startswith("---") or "upgrades available" in line.lower() or line == header_line or len(line) < pos_available: continue
         try:
-            name = line[:pos_id].strip()
-            id_ = line[pos_id:pos_version].strip()
-            current_version = line[pos_version:pos_available].strip()
-            available_version = line[pos_available:pos_source].strip()
+            name, id_ = line[:pos_id].strip(), line[pos_id:pos_version].strip()
+            current_version, available_version = line[pos_version:pos_available].strip(), line[pos_available:pos_source].strip()
             if name and name != 'Name':
-                updates.append({"name": name, "id": id_, "current_version": current_version,
-                                "available_version": available_version})
+                updates.append({"name": name, "id": id_, "current_version": current_version, "available_version": available_version})
         except Exception as e:
-            logging.warning(f"Nie udało się inteligentnie sparsować linii aktualizacji: {line} | Błąd: {e}")
+            logging.warning("Nie udało się inteligentnie sparsować linii aktualizacji: %s | Błąd: %s", line, e)
     return updates
 
-
 def get_windows_updates():
-    """Pobiera informacje o oczekujących aktualizacjach Windows."""
     logging.info("Sprawdzanie aktualizacji systemu Windows...")
-    command = """
-    $updateSession = New-Object -ComObject Microsoft.Update.Session;
-    $updateSearcher = $updateSession.CreateUpdateSearcher();
-    try {
-        $searchResult = $updateSearcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0");
-        $pending_updates = @();
-        foreach ($update in $searchResult.Updates) {
-            $pending_updates += [PSCustomObject]@{ Title = $update.Title; KB = $update.KBArticleIDs; Description = $update.Description }
-        }
-        return @($pending_updates) | ConvertTo-Json -Depth 3
-    } catch { return "[]" }
-    """
+    command = '''try { (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software' and IsHidden=0 and RebootRequired=0").Updates | ForEach-Object { [PSCustomObject]@{ Title = $_.Title; KB = $_.KBArticleIDs } } | ConvertTo-Json -Depth 3 } catch { return '[]' }'''
     output = run_command(command)
     if output:
         try:
             return json.loads(output)
         except json.JSONDecodeError:
+            logging.error("Błąd dekodowania JSON z Windows Updates.")
             return []
     return []
 
-
 def collect_and_report():
-    """Główna funkcja zbierająca i wysyłająca pełny raport o stanie systemu."""
     logging.info("Rozpoczynanie cyklu pełnego raportowania.")
     system_info = get_system_info()
     payload = {
-        "hostname": system_info["hostname"],
-        "ip_address": system_info["ip_address"],
-        "installed_apps": get_installed_apps(),
-        "available_app_updates": get_available_updates(),
-        "pending_os_updates": get_windows_updates()
+        "hostname": system_info["hostname"], "ip_address": system_info["ip_address"],
+        "reboot_required": get_reboot_status(), "installed_apps": get_installed_apps(),
+        "available_app_updates": get_available_updates(), "pending_os_updates": get_windows_updates()
     }
     headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
-    try:
-        logging.info(f"Wysyłanie pełnego raportu do {API_ENDPOINT} dla {system_info['hostname']}")
-        response = requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers, timeout=60)
-        response.raise_for_status()
-        logging.info(f"Pełny raport wysłany pomyślnie. Status serwera: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Nie udało się wysłać pełnego raportu. Błąd sieciowy: {e}")
+    results = []
 
+    def send_to_endpoint(endpoint):
+        try:
+            logging.info("Wysyłanie pełnego raportu do %s dla %s", endpoint, system_info['hostname'])
+            r = requests.post(endpoint, data=json.dumps(payload), headers=headers, timeout=60)
+            r.raise_for_status()
+            logging.info("Pełny raport wysłany pomyślnie do %s.", endpoint)
+            results.append((endpoint, True))
+        except Exception as e:
+            logging.error("Nie udało się wysłać pełnego raportu do %s. Błąd: %s", endpoint, e)
+            results.append((endpoint, False))
+
+    threads = []
+    for endpoint in API_ENDPOINTS:
+        if endpoint.strip():
+            t = threading.Thread(target=send_to_endpoint, args=(endpoint.strip(),))
+            t.start()
+            threads.append(t)
+    for t in threads:
+        t.join()
+    return results
 
 def process_tasks(hostname):
-    """Sprawdza serwer w poszukiwaniu nowych zadań i wykonuje je."""
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH): return
     logging.info("Sprawdzanie dostępnych zadań...")
-    base_url = API_ENDPOINT.replace('/report', '')
     headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
+    tasks_list = []
+    for endpoint in API_ENDPOINTS:
+        base_url = endpoint.strip().replace('/report', '')
+        try:
+            response = requests.get(base_url + "/tasks/" + hostname, headers=headers, timeout=15)
+            response.raise_for_status()
+            tasks = response.json()
+            if tasks:
+                logging.info(f"Zadania z {base_url}: {tasks}")
+                tasks_list.extend([(base_url, t) for t in tasks])
+        except Exception as e:
+            logging.error("Nie udało się pobrać zadań z %s: %s", base_url, e)
 
-    try:
-        response = requests.get(f"{base_url}/tasks/{hostname}", headers=headers, timeout=15)
-        response.raise_for_status()
-        tasks = response.json()
-
-        if not tasks:
-            logging.info("Brak nowych zadań.")
-            return
-
-        for task in tasks:
-            logging.info(f"Odebrano zadanie ID {task['id']}: {task['command']} z payloadem {task['payload']}")
-            task_result_payload = {"task_id": task['id']}
-            status_final = 'błąd'  # Domyślnie ustaw status na błąd
-
-            # --- POCZĄTEK ZMIAN ---
-            if task['command'] == 'update_package':
-                package_id = task['payload']
-                update_command = f"winget upgrade --id \"{package_id}\" --accept-package-agreements --accept-source-agreements --disable-interactivity"
-
-                result_output = run_command(update_command)
-
-                if result_output is not None:
-                    status_final = 'zakończone'
-                    task_result_payload['details'] = {"name": package_id, "old_version": "N/A", "new_version": "N/A"}
-
-            elif task['command'] == 'force_report':
-                # Po prostu wykonaj pełne raportowanie
-                collect_and_report()
+    for base_url, task in tasks_list:
+        logging.info("Odebrano zadanie ID %s: %s z payloadem %s", task['id'], task['command'], task['payload'])
+        task_result_payload, status_final = {"task_id": task['id']}, 'błąd'
+        if task['command'] == 'update_package':
+            package_id = task['payload']
+            update_command = f'& "{WINGET_PATH}" upgrade --id "{package_id}" --accept-package-agreements --accept-source-agreements --disable-interactivity'
+            if run_command(update_command) is not None:
                 status_final = 'zakończone'
-                task_result_payload['details'] = {"message": "Raport został wysłany."}
-            # --- KONIEC ZMIAN ---
-
-            # Wyślij wynik z powrotem do serwera
-            task_result_payload['status'] = status_final
-            requests.post(f"{base_url}/tasks/result", headers=headers, data=json.dumps(task_result_payload))
-            logging.info(f"Zakończono przetwarzanie zadania {task['id']} ze statusem: {status_final}")
-
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Nie udało się pobrać lub przetworzyć zadań: {e}")
+        elif task['command'] == 'uninstall_package':
+            package_id = task['payload']
+            uninstall_command = f'& "{WINGET_PATH}" uninstall --id "{package_id}" --accept-source-agreements --disable-interactivity --silent'
+            if run_command(uninstall_command) is not None:
+                status_final = 'zakończone'
+        elif task['command'] == 'force_report':
+            collect_and_report()
+            status_final = 'zakończone'
+        task_result_payload['status'] = status_final
+        try:
+            requests.post(base_url + "/tasks/result", headers=headers, data=json.dumps(task_result_payload))
+            logging.info("Zakończono przetwarzanie zadania %s ze statusem: %s", task['id'], status_final)
+        except Exception as e:
+            logging.error(f"Nie udało się wysłać wyniku zadania do {base_url}: {e}")
 
 if __name__ == '__main__':
-    logging.info("Agent został uruchomiony.")
+    logging.info("Agent uruchomiony. Sprawdzanie ścieżki do winget...")
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH):
+        logging.critical("Ścieżka WINGET_PATH jest nieprawidłowa lub nieustawiona. Agent nie będzie mógł zarządzać aplikacjami.")
 
-    # --- POPRAWIONA LOGIKA ---
-    # Krok 1: Wyślij jeden pełny raport od razu po starcie agenta.
-    # To zapewni, że dane w panelu pojawią się natychmiast.
-    try:
-        logging.info("Wysyłanie początkowego raportu przy starcie...")
+    current_hostname = get_system_info()["hostname"]
+
+    if len(sys.argv) > 1 and sys.argv[1] == 'run_once':
+        logging.info("Agent uruchomiony w trybie jednorazowym.")
         collect_and_report()
-        logging.info("Początkowy raport wysłany pomyślnie.")
-    except Exception as e:
-        logging.critical(f"Nie udało się wysłać raportu początkowego: {e}")
-
-    # Krok 2: Wejdź w główną pętlę, która sprawdza zadania i cyklicznie raportuje.
-    report_counter = 0
-    while True:
-        try:
-            hostname = get_system_info()["hostname"]
-
-            # Zawsze sprawdzaj zadania w każdej pętli
-            process_tasks(hostname)
-
-            # Inkrementuj licznik do następnego pełnego raportu
+        process_tasks(current_hostname)
+        logging.info("Zakończono działanie w trybie jednorazowym.")
+    else:
+        logging.info("Agent uruchomiony w trybie pętli (usługi).")
+        collect_and_report()
+        report_counter = 0
+        while True:
+            process_tasks(current_hostname)
             report_counter += 1
-
-            # Wysyłaj pełny raport co określony interwał
             if report_counter >= FULL_REPORT_INTERVAL_LOOPS:
                 collect_and_report()
-                report_counter = 0  # Zresetuj licznik
-
-            logging.info(
-                f"Cykl zakończony. Następne sprawdzenie zadań za {LOOP_INTERVAL_SECONDS}s. Pełny raport za {FULL_REPORT_INTERVAL_LOOPS - report_counter} cykli.")
-            time.sleep(LOOP_INTERVAL_SECONDS)
-
-        except Exception as e:
-            logging.critical(f"Krytyczny błąd w głównej pętli agenta: {e}")
-            # W razie błędu poczekaj, aby uniknąć zapętlenia i 100% CPU
+                current_hostname = get_system_info()["hostname"]
+                report_counter = 0
+            logging.info("Cykl zakończony. Następne sprawdzenie za %ds. Pełny raport za %d cykli.", LOOP_INTERVAL_SECONDS, FULL_REPORT_INTERVAL_LOOPS - report_counter)
             time.sleep(LOOP_INTERVAL_SECONDS)
