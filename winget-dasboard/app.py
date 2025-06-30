@@ -25,183 +25,240 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Szablon kodu agenta (używany przez generator) ---
-AGENT_CODE_TEMPLATE = """
-import os, json, socket, time, logging, subprocess, requests, sys
-# Ta wersja agenta nie używa dotenv, bo konfiguracja jest wkompilowana
+# --- OSTATECZNA WERSJA SZABLONU AGENTA WBUDOWANA W PLIK ---
+AGENT_CODE_FINAL = """
+import os
+import json
+import socket
+import time
+import logging
+import subprocess
+import requests
+import sys
+
+# --- WAŻNE: KONFIGURACJA ŚCIEŻKI DO WINGET ---
+# Poniżej należy wkleić PEŁNĄ ścieżkę do pliku winget.exe na komputerze klienckim.
+# Można ją znaleźć, wpisując w CMD komendę: where winget
+# Przykład: WINGET_PATH = r"C:\\Users\\TwojaNazwa\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe"
+WINGET_PATH = r"C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe"
+
 # --- Konfiguracja wstrzyknięta przez serwer ---
 API_ENDPOINT = "{api_endpoint}"
 API_KEY = "{api_key}"
 LOOP_INTERVAL_SECONDS = {loop_interval}
 FULL_REPORT_INTERVAL_LOOPS = {report_interval}
 
-# --- Reszta kodu agenta ---
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'agent.log')
+# --- Konfiguracja logowania ---
+if getattr(sys, 'frozen', False):
+    application_path = os.path.dirname(sys.executable)
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+log_file = os.path.join(application_path, 'agent.log')
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# --- Główny kod agenta ---
 def run_command(command):
     try:
-        full_command = (f"[System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-                        f"$OutputEncoding = [System.Text.Encoding]::UTF8; "
-                        f"{{command}}")
+        full_command = (
+            "[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US'); "
+            "[System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "$OutputEncoding = [System.Text.Encoding]::UTF8; "
+            + command
+        )
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", full_command], 
+            ["powershell.exe", "-NoProfile", "-Command", full_command],
             capture_output=True, text=True, check=True, encoding='utf-8',
             creationflags=subprocess.CREATE_NO_WINDOW
         )
         return result.stdout
     except subprocess.CalledProcessError as e:
-        logging.error(f"Błąd podczas wykonywania polecenia '{{command}}': {{e.stderr}}")
+        logging.error("Błąd podczas wykonywania polecenia '%s': %s", command, e.stderr)
         return None
     except FileNotFoundError:
         logging.error("Nie znaleziono polecenia 'powershell.exe'.")
         return None
+
 def get_system_info():
     hostname = socket.gethostname()
-    try: ip_address = socket.gethostbyname(hostname)
-    except socket.gaierror: ip_address = '127.0.0.1'
-    return {{"hostname": hostname, "ip_address": ip_address}}
+    try:
+        ip_address = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        ip_address = '127.0.0.1'
+    return {"hostname": hostname, "ip_address": ip_address}
+
 def get_reboot_status():
     logging.info("Sprawdzanie statusu wymaganego restartu...")
     command = "(New-Object -ComObject Microsoft.Update.SystemInfo).RebootRequired"
     output = run_command(command)
     return "true" in output.lower() if output else False
+
 def get_installed_apps():
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH):
+        logging.error("Ścieżka do winget.exe jest nieprawidłowa lub plik nie istnieje: %s", WINGET_PATH)
+        return []
     logging.info("Pobieranie i filtrowanie listy zainstalowanych aplikacji...")
-    BLACKLIST_KEYWORDS = [
-        'redistributable', 'visual c++', '.net framework', 'update for windows', 'host controller', 
-        'java runtime', 'driver', 'odbc', 'provider', 'service pack', 'hevc', 'heif', 'vp9', 
-        'webp', 'host experience', 'appruntime', 'web components', 'web plugins', 'windows package manager'
-    ]
-    MICROSOFT_APP_WHITELIST = ['office', '365', 'teams', 'visual studio', 'sql server', 'powertoys', 'edge']
-    output = run_command("winget list --accept-source-agreements")
+    # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
+    command_to_run = '& "' + WINGET_PATH + '" list --accept-source-agreements'
+    output = run_command(command_to_run)
     if not output: return []
-    apps, lines = [], output.strip().split('\\r\\n')
+    apps, lines = [], output.strip().splitlines()
     header_line = ""
     for line in lines:
-        if "Name" in line and "Id" in line and "Version" in line: header_line = line; break
-    if not header_line: return []
-    pos_id, pos_version, pos_available, pos_source = header_line.find("Id"), header_line.find("Version"), header_line.find("Available"), header_line.find("Source")
+        if "Name" in line and "Id" in line and "Version" in line:
+            header_line = line
+            break
+    if not header_line:
+        logging.warning("Nie znaleziono linii nagłówka w wyniku polecenia winget list.")
+        return []
+    pos_id = header_line.find("Id")
+    pos_version = header_line.find("Version")
+    pos_available = header_line.find("Available")
+    pos_source = header_line.find("Source")
     if pos_available == -1: pos_available = pos_source if pos_source != -1 else len(header_line) + 20
     for line in lines:
-        if (line.strip().startswith("---") or not line.strip() or line == header_line or len(line) < pos_version): continue
+        if line.strip().startswith("---") or not line.strip() or line == header_line or len(line) < pos_version: continue
         try:
             name, id_ = line[:pos_id].strip(), line[pos_id:pos_version].strip()
             version, source = line[pos_version:pos_available].strip(), line[pos_source:].strip() if pos_source != -1 else ""
             if not name or name.lower() == 'name': continue
             name_lower = name.lower()
+            BLACKLIST_KEYWORDS = ['redistributable', 'visual c++', '.net framework']
             if any(k in name_lower for k in BLACKLIST_KEYWORDS): continue
-            if name_lower.startswith('microsoft') and not any(w in name_lower for w in MICROSOFT_APP_WHITELIST): continue
-            if source.lower() == 'msstore' and not any(w in name_lower for w in MICROSOFT_APP_WHITELIST): continue
-            apps.append({{"name": name, "id": id_, "version": version}})
-        except Exception as e: logging.warning(f"Nie udało się sparsować linii aplikacji: {{line}} | Błąd: {{e}}")
-    logging.info(f"Znaleziono {{len(apps)}} przefiltrowanych aplikacji.")
+            apps.append({"name": name, "id": id_, "version": version})
+        except Exception as e:
+            logging.warning("Nie udało się sparsować linii aplikacji: %s | Błąd: %s", line, e)
+    logging.info("Znaleziono %d przefiltrowanych aplikacji.", len(apps))
     return apps
+
 def get_available_updates():
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH): return []
     logging.info("Sprawdzanie dostępnych aktualizacji aplikacji...")
-    output = run_command("winget upgrade --accept-source-agreements")
+    # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
+    command_to_run = '& "' + WINGET_PATH + '" upgrade --accept-source-agreements'
+    output = run_command(command_to_run)
     if not output: return []
-    updates, lines = [], output.strip().split('\\r\\n')
+    updates, lines = [], output.strip().splitlines()
     header_line = ""
     for line in lines:
-        if "Name" in line and "Id" in line and "Version" in line: header_line = line; break
-    if not header_line: return []
-    pos_id, pos_version, pos_available, pos_source = header_line.find("Id"), header_line.find("Version"), header_line.find("Available"), header_line.find("Source")
+        if "Name" in line and "Id" in line and "Version" in line:
+            header_line = line
+            break
+    if not header_line:
+        logging.warning("Nie znaleziono linii nagłówka w wyniku polecenia winget upgrade.")
+        return []
+    pos_id = header_line.find("Id")
+    pos_version = header_line.find("Version")
+    pos_available = header_line.find("Available")
+    pos_source = header_line.find("Source")
     for line in lines:
         if line.strip().startswith("---") or "upgrades available" in line.lower() or line == header_line or len(line) < pos_available: continue
         try:
             name, id_ = line[:pos_id].strip(), line[pos_id:pos_version].strip()
             current_version, available_version = line[pos_version:pos_available].strip(), line[pos_available:pos_source].strip()
             if name and name != 'Name':
-                updates.append({{"name": name, "id": id_, "current_version": current_version, "available_version": available_version}})
-        except Exception as e: logging.warning(f"Nie udało się inteligentnie sparsować linii aktualizacji: {{line}} | Błąd: {{e}}")
+                updates.append({"name": name, "id": id_, "current_version": current_version, "available_version": available_version})
+        except Exception as e:
+            logging.warning("Nie udało się inteligentnie sparsować linii aktualizacji: %s | Błąd: %s", line, e)
     return updates
+
 def get_windows_updates():
-    logging.info("Sprawdzanie aktualizacji systemu Windows (z filtrem RebootRequired)...")
-    command = "try {{(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search(\\"IsInstalled=0 and Type='Software' and IsHidden=0 and RebootRequired=0\\").Updates | ForEach-Object {{ [PSCustomObject]@{{ Title = $_.Title; KB = $_.KBArticleIDs; Description = $_.Description }} }} | ConvertTo-Json -Depth 3 }} catch {{ return '[]' }}"
+    logging.info("Sprawdzanie aktualizacji systemu Windows...")
+    command = '''try { (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0 and Type='Software' and IsHidden=0 and RebootRequired=0").Updates | ForEach-Object { [PSCustomObject]@{ Title = $_.Title; KB = $_.KBArticleIDs } } | ConvertTo-Json -Depth 3 } catch { return '[]' }'''
     output = run_command(command)
     if output:
-        try: return json.loads(output)
-        except json.JSONDecodeError: logging.error("Błąd dekodowania JSON z Windows Updates."); return []
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError:
+            logging.error("Błąd dekodowania JSON z Windows Updates.")
+            return []
     return []
+
 def collect_and_report():
     logging.info("Rozpoczynanie cyklu pełnego raportowania.")
     system_info = get_system_info()
-    payload = {{
+    payload = {
         "hostname": system_info["hostname"], "ip_address": system_info["ip_address"],
         "reboot_required": get_reboot_status(), "installed_apps": get_installed_apps(),
         "available_app_updates": get_available_updates(), "pending_os_updates": get_windows_updates()
-    }}
-    headers = {{"Content-Type": "application/json", "X-API-Key": API_KEY}}
+    }
+    headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
     try:
-        logging.info(f"Wysyłanie pełnego raportu do {{API_ENDPOINT}} dla {{system_info['hostname']}}")
+        logging.info("Wysyłanie pełnego raportu do %s dla %s", API_ENDPOINT, system_info['hostname'])
         requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers, timeout=60).raise_for_status()
         logging.info("Pełny raport wysłany pomyślnie.")
     except Exception as e:
-        logging.error(f"Nie udało się wysłać pełnego raportu. Błąd: {{e}}")
+        logging.error("Nie udało się wysłać pełnego raportu. Błąd: %s", e)
+
 def process_tasks(hostname):
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH): return
     logging.info("Sprawdzanie dostępnych zadań...")
     base_url = API_ENDPOINT.replace('/report', '')
-    headers = {{"Content-Type": "application/json", "X-API-Key": API_KEY}}
+    headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
     try:
-        response = requests.get(f"{{base_url}}/tasks/{{hostname}}", headers=headers, timeout=15)
+        response = requests.get(base_url + "/tasks/" + hostname, headers=headers, timeout=15)
         response.raise_for_status()
         tasks = response.json()
-        if not tasks: logging.info("Brak nowych zadań."); return
+        if not tasks:
+            logging.info("Brak nowych zadań.")
+            return
         for task in tasks:
-            logging.info(f"Odebrano zadanie ID {{task['id']}}: {{task['command']}} z payloadem {{task['payload']}}")
-            task_result_payload, status_final = {{"task_id": task['id']}}, 'błąd'
+            logging.info("Odebrano zadanie ID %s: %s z payloadem %s", task['id'], task['command'], task['payload'])
+            task_result_payload, status_final = {"task_id": task['id']}, 'błąd'
             if task['command'] == 'update_package':
                 package_id = task['payload']
-                update_command = f'winget upgrade --id "{{package_id}}" --accept-package-agreements --accept-source-agreements --disable-interactivity'
+                # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
+                update_command = '& "' + WINGET_PATH + '" upgrade --id "' + package_id + '" --accept-package-agreements --accept-source-agreements --disable-interactivity'
                 if run_command(update_command) is not None:
-                    status_final = 'zakończone'; task_result_payload['details'] = {{"name": package_id}}
+                    status_final = 'zakończone'
             elif task['command'] == 'uninstall_package':
                 package_id = task['payload']
-                uninstall_command = f'winget uninstall --id "{{package_id}}" --accept-source-agreements --disable-interactivity --silent'
+                # POPRAWKA: Dodanie operatora wywołania '&' dla PowerShell
+                uninstall_command = '& "' + WINGET_PATH + '" uninstall --id "' + package_id + '" --accept-source-agreements --disable-interactivity --silent'
                 if run_command(uninstall_command) is not None:
                     status_final = 'zakończone'
             elif task['command'] == 'force_report':
-                collect_and_report(); status_final = 'zakończone'
+                collect_and_report()
+                status_final = 'zakończone'
             task_result_payload['status'] = status_final
-            requests.post(f"{{base_url}}/tasks/result", headers=headers, data=json.dumps(task_result_payload))
-            logging.info(f"Zakończono przetwarzanie zadania {{task['id']}} ze statusem: {{status_final}}")
-    except Exception as e: 
-        logging.error(f"Nie udało się pobrać lub przetworzyć zadań: {{e}}")
+            requests.post(base_url + "/tasks/result", headers=headers, data=json.dumps(task_result_payload))
+            logging.info("Zakończono przetwarzanie zadania %s ze statusem: %s", task['id'], status_final)
+    except Exception as e:
+        logging.error("Nie udało się pobrać lub przetworzyć zadań: %s", e)
+
 if __name__ == '__main__':
+    logging.info("Agent uruchomiony. Sprawdzanie ścieżki do winget...")
+    if not WINGET_PATH or not os.path.exists(WINGET_PATH):
+        logging.critical("Ścieżka WINGET_PATH jest nieprawidłowa lub nieustawiona. Agent nie będzie mógł zarządzać aplikacjami.")
+
+    current_hostname = get_system_info()["hostname"]
+
     if len(sys.argv) > 1 and sys.argv[1] == 'run_once':
         logging.info("Agent uruchomiony w trybie jednorazowym.")
-        try:
-            collect_and_report()
-            hostname = get_system_info()["hostname"]
-            process_tasks(hostname)
-        except Exception as e:
-            logging.critical(f"Wystąpił błąd podczas jednorazowego uruchomienia: {{e}}", exc_info=True)
+        collect_and_report()
+        process_tasks(current_hostname)
         logging.info("Zakończono działanie w trybie jednorazowym.")
     else:
-        logging.info("Agent został uruchomiony w trybie pętli (usługi).")
-        try:
-            logging.info("Wysyłanie początkowego raportu przy starcie..."); collect_and_report()
-            logging.info("Początkowy raport wysłany pomyślnie.")
-        except Exception as e: logging.critical(f"Nie udało się wysłać raportu początkowego: {{e}}", exc_info=True)
+        logging.info("Agent uruchomiony w trybie pętli (usługi).")
+        collect_and_report()
         report_counter = 0
         while True:
-            try:
-                hostname = get_system_info()["hostname"]
-                process_tasks(hostname)
-                report_counter += 1
-                if report_counter >= FULL_REPORT_INTERVAL_LOOPS:
-                    collect_and_report(); report_counter = 0
-                logging.info(f"Cykl zakończony. Następne sprawdzenie za {{LOOP_INTERVAL_SECONDS}}s. Pełny raport za {{FULL_REPORT_INTERVAL_LOOPS - report_counter}} cykli.")
-                time.sleep(LOOP_INTERVAL_SECONDS)
-            except Exception as e:
-                logging.critical(f"Krytyczny błąd w głównej pętli agenta: {{e}}", exc_info=True)
-                time.sleep(LOOP_INTERVAL_SECONDS)
+            process_tasks(current_hostname)
+            report_counter += 1
+            if report_counter >= FULL_REPORT_INTERVAL_LOOPS:
+                collect_and_report()
+                current_hostname = get_system_info()["hostname"]
+                report_counter = 0
+            logging.info("Cykl zakończony. Następne sprawdzenie za %ds. Pełny raport za %d cykli.", LOOP_INTERVAL_SECONDS, FULL_REPORT_INTERVAL_LOOPS - report_counter)
+            time.sleep(LOOP_INTERVAL_SECONDS)
 """
+
+
+# --- Funkcje i reszta aplikacji (bez zmian) ---
 
 @app.after_request
 def add_header(response):
-    """Dodaje nagłówki do każdej odpowiedzi, aby zapobiec cachowaniu przez przeglądarkę."""
     if 'text/html' in response.content_type:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
         response.headers['Pragma'] = 'no-cache'
@@ -209,7 +266,6 @@ def add_header(response):
     return response
 
 
-# --- Funkcje pomocnicze, filtry i procesory kontekstu ---
 @app.template_filter('to_local_time')
 def to_local_time_filter(utc_str):
     if not utc_str: return ""
@@ -226,7 +282,6 @@ def inject_year():
     return {'current_year': datetime.now(UTC).year}
 
 
-# --- Obsługa Bazy Danych ---
 def get_db():
     if not hasattr(g, 'sqlite_db'):
         g.sqlite_db = sqlite3.connect(DATABASE)
@@ -250,7 +305,6 @@ def init_db_command():
     print('Zainicjowano bazę danych.')
 
 
-# --- Bezpieczeństwo i Favicon ---
 def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -268,7 +322,6 @@ def favicon():
                                mimetype='image/vnd.microsoft.icon')
 
 
-# --- GŁÓWNE STRONY (FRONTEND) ---
 @app.route('/')
 def index():
     computers = get_db().execute(
@@ -323,11 +376,9 @@ def view_report(report_id):
 
 @app.route('/settings')
 def settings():
-    """Wyświetla stronę z ustawieniami i formularzem generatora."""
     return render_template('settings.html', server_api_key=API_KEY)
 
 
-# --- GŁÓWNY ENDPOINT API DLA RAPORTÓW OD AGENTÓW ---
 @app.route('/api/report', methods=['POST'])
 @require_api_key
 def receive_report():
@@ -392,7 +443,6 @@ def receive_report():
     return "Report received successfully", 200
 
 
-# --- API DO ZARZĄDZANIA ZADANIAMI ---
 @app.route('/computer/<int:computer_id>/update', methods=['POST'])
 def request_update(computer_id):
     data, db = request.get_json(), get_db()
@@ -482,7 +532,6 @@ def task_result():
     return "Result received", 200
 
 
-# --- ENDPOINTY DO GENEROWANIA RAPORTÓW ---
 @app.route('/report/computer/<int:computer_id>')
 def report_single(computer_id):
     computer = get_db().execute("SELECT hostname FROM computers WHERE id = ?", (computer_id,)).fetchone()
@@ -517,7 +566,8 @@ def generate_report_content(computer_ids):
         computer = db.execute("SELECT * FROM computers WHERE id = ?", (cid,)).fetchone()
         if not computer: continue
         content.append(f"# RAPORT DLA KOMPUTERA: {computer['hostname']} ({computer['ip_address']})")
-        content.append(f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\n")
+        content.append(
+            f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
         content.append("## Dziennik Zdarzeń (ostatnie 20)")
         history = db.execute(
             "SELECT timestamp, action_type, details FROM action_history WHERE computer_id = ? ORDER BY timestamp DESC LIMIT 20",
@@ -542,7 +592,7 @@ def generate_report_content(computer_ids):
         latest_report = db.execute(
             "SELECT id FROM reports WHERE computer_id = ? ORDER BY report_timestamp DESC LIMIT 1", (cid,)).fetchone()
         if latest_report:
-            content.append("\n## Oczekujące aktualizacje (wg ostatniego raportu)")
+            content.append("\\n## Oczekujące aktualizacje (wg ostatniego raportu)")
             updates = db.execute("SELECT name, current_version, available_version FROM updates WHERE report_id = ?",
                                  (latest_report['id'],)).fetchall()
             if updates:
@@ -550,15 +600,15 @@ def generate_report_content(computer_ids):
                  in updates]
             else:
                 content.append("* Brak oczekujących aktualizacji.")
-            content.append("\n## Zainstalowane aplikacje (wg ostatniego raportu)")
+            content.append("\\n## Zainstalowane aplikacje (wg ostatniego raportu)")
             apps = db.execute("SELECT name, version FROM applications WHERE report_id = ?",
                               (latest_report['id'],)).fetchall()
             if apps:
                 [content.append(f"* {item['name']} ({item['version']})") for item in apps]
             else:
                 content.append("* Brak aplikacji.")
-        content.append("\n" + "=" * 80 + "\n")
-    return "\n".join(content)
+        content.append("\\n" + "=" * 80 + "\\n")
+    return "\\n".join(content)
 
 
 def generate_snapshot_report_content(report_id):
@@ -568,9 +618,9 @@ def generate_snapshot_report_content(report_id):
         (report_id,)).fetchone()
     if not report: return "Nie znaleziono raportu."
     content.append(f"# RAPORT HISTORYCZNY DLA: {report['hostname']} ({report['ip_address']})")
-    content.append(f"# Migawka z dnia: {to_local_time_filter(report['report_timestamp'])}\n")
+    content.append(f"# Migawka z dnia: {to_local_time_filter(report['report_timestamp'])}\\n")
     content.append(
-        f"Data wygenerowania pliku: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f"Data wygenerowania pliku: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
     content.append("## Oczekujące aktualizacje w tym raporcie")
     updates = db.execute(
         "SELECT name, current_version, available_version, update_type FROM updates WHERE report_id = ?",
@@ -584,33 +634,19 @@ def generate_snapshot_report_content(report_id):
                     f"* [Aplikacja] {item['name']}: {item['current_version']} -> {item['available_version']}")
     else:
         content.append("* Brak.")
-    content.append("\n## Zainstalowane aplikacje w tym raporcie")
+    content.append("\\n## Zainstalowane aplikacje w tym raporcie")
     apps = db.execute("SELECT name, version FROM applications WHERE report_id = ?", (report_id,)).fetchall()
     if apps:
         [content.append(f"* {item['name']} ({item['version']})") for item in apps]
     else:
         content.append("* Brak.")
-    return "\n".join(content)
-
-
-# --- NOWA FUNKCJA DO ZARZĄDZANIA CACHE ---
-@app.after_request
-def add_header(response):
-    """Dodaje nagłówki do każdej odpowiedzi, aby zapobiec cachowaniu przez przeglądarkę."""
-    if 'text/html' in response.content_type:
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '-1'
-    return response
+    return "\\n".join(content)
 
 
 @app.route('/settings/generate_exe', methods=['POST'])
 def generate_exe():
-    """Odbiera dane z formularza, generuje kod agenta, kompiluje go i oferuje do pobrania."""
     if not shutil.which("pyinstaller"):
-        flash(
-            "Błąd serwera: Program 'pyinstaller' nie jest zainstalowany lub nie znajduje się w ścieżce systemowej PATH.",
-            "error")
+        flash("Błąd serwera: Program 'pyinstaller' nie jest zainstalowany.", "error")
         return redirect(url_for('settings'))
 
     config = {
@@ -620,7 +656,11 @@ def generate_exe():
         "report_interval": int(request.form.get('report_interval', 240)),
     }
 
-    final_agent_code = AGENT_CODE_TEMPLATE.format(**config)
+    # POPRAWIONA, OSTATECZNA WERSJA - bez dodawania cudzysłowów
+    final_agent_code = AGENT_CODE_FINAL.replace('__API_ENDPOINT__', config['api_endpoint']) \
+                                          .replace('__API_KEY__', config['api_key']) \
+                                          .replace('__LOOP_INTERVAL__', str(config['loop_interval'])) \
+                                          .replace('__REPORT_INTERVAL__', str(config['report_interval']))
 
     build_dir = tempfile.mkdtemp()
     script_path = os.path.join(build_dir, f"agent_{uuid.uuid4().hex}.py")
@@ -630,7 +670,7 @@ def generate_exe():
             f.write(final_agent_code)
 
         command = [
-            "pyinstaller", "--onefile", "--windowed",
+            "pyinstaller", "--onefile",
             "--distpath", os.path.join(build_dir, 'dist'),
             "--workpath", os.path.join(build_dir, 'build'),
             "--specpath", build_dir,
@@ -653,7 +693,6 @@ def generate_exe():
             download_name='agent.exe',
             mimetype='application/vnd.microsoft.portable-executable'
         )
-
     except subprocess.CalledProcessError as e:
         logging.error(f"Błąd kompilacji PyInstaller: {e.stderr}")
         return f"<h1>Błąd podczas kompilacji</h1><pre>{e.stderr}</pre>", 500
@@ -665,6 +704,5 @@ def generate_exe():
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
-# --- GŁÓWNE URUCHOMIENIE ---
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
