@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
                          buttonCell.innerHTML = `<span class="status-pending">${message}</span>`;
                     }
                     setTimeout(() => { location.reload(); }, 20000);
+                    //location.reload();
                 } else {
                     this.textContent = 'Błąd!';
                     this.disabled = false;

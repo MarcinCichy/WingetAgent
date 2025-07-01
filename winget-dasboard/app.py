@@ -207,7 +207,17 @@ def receive_report():
             new_updates_list = [u for u in data.get('pending_os_updates', []) if isinstance(u, dict)]
             new_updates = {u.get('Title') for u in new_updates_list}
             installed_updates = old_updates - new_updates
+
             for update_name in installed_updates:
+                # Sprawdzaj, czy identyczny wpis był już w ostatnich 7 dniach dla tego komputera
+                exists = cur.execute("""
+                    SELECT 1 FROM action_history
+                    WHERE computer_id = ? AND action_type = 'OS_UPDATE_SUCCESS'
+                      AND json_extract(details, '$.name') = ?
+                      AND timestamp > datetime('now', '-7 days')
+                """, (computer_id, update_name)).fetchone()
+                if exists:
+                    continue  # pomiń duplikat
                 cur.execute("INSERT INTO action_history (computer_id, action_type, details) VALUES (?, ?, ?)",
                             (computer_id, 'OS_UPDATE_SUCCESS', json.dumps({"name": update_name})))
         db.commit()
@@ -340,13 +350,26 @@ def generate_report_content(computer_ids):
         computer = db.execute("SELECT * FROM computers WHERE id = ?", (cid,)).fetchone()
         if not computer: continue
         content.append(f"# RAPORT DLA KOMPUTERA: {computer['hostname']} ({computer['ip_address']})")
-        content.append(f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
-        content.append("## Dziennik Zdarzeń (ostatnie 20)")
+        content.append(f"Data wygenerowania: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}")
+        content.append("")
+        content.append("## Dziennik Zdarzeń (ostatnie 20, bez powtórek)")
         history = db.execute(
-            "SELECT timestamp, action_type, details FROM action_history WHERE computer_id = ? ORDER BY timestamp DESC LIMIT 20",
+            "SELECT timestamp, action_type, details FROM action_history WHERE computer_id = ? ORDER BY timestamp DESC",
             (cid,)).fetchall()
-        if history:
-            for item in history:
+        # FILTR NA UNIKALNE ZDARZENIA:
+        seen = set()
+        unique_events = []
+        for item in history:
+            details = json.loads(item['details'])
+            # Możesz zbudować klucz z typu zdarzenia i nazwy aktualizacji
+            key = (item['action_type'], details.get('name', ''))
+            if key not in seen:
+                seen.add(key)
+                unique_events.append(item)
+            if len(unique_events) >= 20:  # limit jak wcześniej
+                break
+        if unique_events:
+            for item in unique_events:
                 details = json.loads(item['details'])
                 log_entry = f"* [{to_local_time_filter(item['timestamp'])}] "
                 if item['action_type'] == 'APP_UPDATE_SUCCESS':
@@ -365,7 +388,8 @@ def generate_report_content(computer_ids):
         latest_report = db.execute(
             "SELECT id FROM reports WHERE computer_id = ? ORDER BY report_timestamp DESC LIMIT 1", (cid,)).fetchone()
         if latest_report:
-            content.append("\\n## Oczekujące aktualizacje (wg ostatniego raportu)")
+            content.append("")
+            content.append("## Oczekujące aktualizacje (wg ostatniego raportu)")
             updates = db.execute("SELECT name, current_version, available_version FROM updates WHERE report_id = ?",
                                  (latest_report['id'],)).fetchall()
             if updates:
@@ -373,15 +397,18 @@ def generate_report_content(computer_ids):
                  in updates]
             else:
                 content.append("* Brak oczekujących aktualizacji.")
-            content.append("\\n## Zainstalowane aplikacje (wg ostatniego raportu)")
+            content.append("")
+            content.append("## Zainstalowane aplikacje (wg ostatniego raportu)")
             apps = db.execute("SELECT name, version FROM applications WHERE report_id = ?",
                               (latest_report['id'],)).fetchall()
             if apps:
                 [content.append(f"* {item['name']} ({item['version']})") for item in apps]
             else:
                 content.append("* Brak aplikacji.")
-        content.append("\\n" + "=" * 80 + "\\n")
-    return "\\n".join(content)
+        content.append("")
+        content.append("=" * 80)
+        content.append("")
+    return "\n".join(content)
 
 
 def generate_snapshot_report_content(report_id):
@@ -391,9 +418,9 @@ def generate_snapshot_report_content(report_id):
         (report_id,)).fetchone()
     if not report: return "Nie znaleziono raportu."
     content.append(f"# RAPORT HISTORYCZNY DLA: {report['hostname']} ({report['ip_address']})")
-    content.append(f"# Migawka z dnia: {to_local_time_filter(report['report_timestamp'])}\\n")
-    content.append(
-        f"Data wygenerowania pliku: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}\\n")
+    content.append(f"# Migawka z dnia: {to_local_time_filter(report['report_timestamp'])}")
+    content.append(f"Data wygenerowania pliku: {datetime.now(ZoneInfo('Europe/Warsaw')).strftime('%Y-%m-%d %H:%M:%S')}")
+    content.append("")
     content.append("## Oczekujące aktualizacje w tym raporcie")
     updates = db.execute(
         "SELECT name, current_version, available_version, update_type FROM updates WHERE report_id = ?",
@@ -407,13 +434,15 @@ def generate_snapshot_report_content(report_id):
                     f"* [Aplikacja] {item['name']}: {item['current_version']} -> {item['available_version']}")
     else:
         content.append("* Brak.")
-    content.append("\\n## Zainstalowane aplikacje w tym raporcie")
+    content.append("")
+    content.append("## Zainstalowane aplikacje w tym raporcie")
     apps = db.execute("SELECT name, version FROM applications WHERE report_id = ?", (report_id,)).fetchall()
     if apps:
         [content.append(f"* {item['name']} ({item['version']})") for item in apps]
     else:
         content.append("* Brak.")
-    return "\\n".join(content)
+    content.append("")
+    return "\n".join(content)
 
 @app.route('/settings/generate_exe', methods=['POST'])
 def generate_exe():
