@@ -139,7 +139,21 @@ def view_report(report_id):
 
 @app.route('/settings')
 def settings():
-    return render_template('settings.html', server_api_key=API_KEY)
+    default_blacklist_keywords = """
+redistributable
+visual c++
+.net framework
+microsoft
+windows
+bing
+edge
+onedrive
+office
+teams
+outlook
+store
+    """
+    return render_template('settings.html', server_api_key=API_KEY, default_blacklist_keywords=default_blacklist_keywords)
 
 @app.route('/api/report', methods=['POST'])
 @require_api_key
@@ -458,12 +472,17 @@ def generate_exe():
         "loop_interval": int(request.form.get('loop_interval', 15)),
         "report_interval": int(request.form.get('report_interval', 240)),
         "winget_path": request.form.get('winget_path', ''),  # jeśli masz
+        "blacklist_keywords": request.form.get('blacklist_keywords', '')
     }
+
+    blacklist_str = ', '.join([f"'{kw.strip()}'" for kw in config['blacklist_keywords'].splitlines() if kw.strip()])
 
     logging.info(
         f"GENERATOR: endpoint1={config['api_endpoint_1']} endpoint2={config['api_endpoint_2']} key={config['api_key']}")
 
-    final_agent_code = AGENT_TEMPLATE.replace('__API_ENDPOINT_1__', config['api_endpoint_1']) \
+    final_agent_code = AGENT_TEMPLATE \
+        .replace('__BLACKLIST_KEYWORDS__', blacklist_str) \
+        .replace('__API_ENDPOINT_1__', config['api_endpoint_1']) \
         .replace('__API_ENDPOINT_2__', config['api_endpoint_2']) \
         .replace('__API_KEY__', config['api_key']) \
         .replace('__LOOP_INTERVAL__', str(config['loop_interval'])) \

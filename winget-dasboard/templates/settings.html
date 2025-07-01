@@ -45,6 +45,11 @@
             <input type="number" id="report_interval" name="report_interval" value="240" required>
             <small>Co ile pętli agent ma wysyłać pełny raport o stanie aplikacji (interwał * pętle = czas w sekundach).</small>
         </div>
+        <div class="form-group">
+            <label for="blacklist_keywords">Czarna lista fraz (1 fraza na linię):</label>
+            <textarea id="blacklist_keywords" name="blacklist_keywords" rows="10">{{ default_blacklist_keywords }}</textarea>
+            <small>Aplikacje zawierające wybraną frazę w nazwie nie pojawią się w raportach.</small>
+        </div>
         <button type="submit" class="action-btn btn-report">Generuj agent.exe</button>
     </form>
 {% endblock %}

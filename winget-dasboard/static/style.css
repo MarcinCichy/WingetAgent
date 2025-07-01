@@ -29,7 +29,7 @@ body {
     background-color: var(--kolor-tla);
     color: var(--kolor-tekstu);
     transition: background-color 0.2s linear, color 0.2s linear;
-    padding-top: 6rem;
+    padding-top: 10rem;
     padding-bottom: 3rem;
 }
 .main-content {
@@ -136,4 +136,28 @@ html.dark-mode #theme-toggle .moon-icon { display: none; }
     margin-top: 0.5rem;
     font-size: 0.85em;
     color: #888;
+}
+.form-group textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px 8px;
+    border: 1.5px solid var(--kolor-tabeli-ramka);
+    background-color: var(--kolor-tla);
+    color: var(--kolor-tekstu);
+    border-radius: 4px;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 1em;
+    transition: border-color 0.2s, background-color 0.2s;
+    text-align: left;
+}
+.form-group textarea:focus {
+    border-color: var(--kolor-linku);
+    outline: none;
+    background-color: var(--kolor-tla-hover);
+    box-shadow: 0 0 6px rgba(0,123,255,0.10);
+}
+html.dark-mode .form-group textarea:focus {
+    background-color: #24292f;
 }

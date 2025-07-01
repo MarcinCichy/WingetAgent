@@ -120,3 +120,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    var textarea = document.getElementById('blacklist_keywords');
+    if (textarea) {
+        textarea.addEventListener('blur', function() {
+            var cleaned = textarea.value.split('\n').map(line => line.trim()).join('\n');
+            textarea.value = cleaned;
+        });
+    }
+});
