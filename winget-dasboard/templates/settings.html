@@ -17,12 +17,12 @@
     <form action="{{ url_for('generate_exe') }}" method="POST" class="settings-form">
         <div class="form-group">
             <label for="api_endpoint1">Adres serwera 1 (API Endpoint):</label>
-            <input type="text" id="api_endpoint1" name="api_endpoint1" value="http://TWOJ_ADRES_IP:5000/api/report" required>
+            <input type="text" id="api_endpoint_1" name="api_endpoint_1" value="http://TWOJ_ADRES_IP:5000/api/report" required>
             <small>Podstawowy adres serwera do raportowania.</small>
         </div>
         <div class="form-group">
             <label for="api_endpoint2">Adres serwera 2 (opcjonalnie):</label>
-            <input type="text" id="api_endpoint2" name="api_endpoint2" value="">
+            <input type="text" id="api_endpoint_2" name="api_endpoint_2" value="">
             <small>Drugi serwer (jeśli używasz dwóch paneli administratora).</small>
         </div>
         <div class="form-group">

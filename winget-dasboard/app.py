@@ -435,10 +435,23 @@ def settings():
 @app.route('/api/report', methods=['POST'])
 @require_api_key
 def receive_report():
+
     data, db = request.get_json(), get_db()
     if not data or 'hostname' not in data: return "Bad Request", 400
     hostname = data.get('hostname')
     logging.info(f"Przetwarzanie raportu od: {hostname}")
+    logging.info("[DEBUG] SERVER odebrał raport: installed_apps=%d, available_app_updates=%d, pending_os_updates=%d",
+                 len(data.get("installed_apps", [])),
+                 len(data.get("available_app_updates", [])),
+                 len(data.get("pending_os_updates", [])) if isinstance(data.get("pending_os_updates", []), list) else 1
+                 )
+    # (opcjonalnie, dla podglądu co w środku)
+    logging.info("[DEBUG] Przykład installed_apps: %s",
+                 json.dumps(data.get("installed_apps", [])[:3], ensure_ascii=False))
+    logging.info("[DEBUG] Przykład available_app_updates: %s",
+                 json.dumps(data.get("available_app_updates", [])[:3], ensure_ascii=False))
+    logging.info("[DEBUG] Przykład pending_os_updates: %s",
+                 json.dumps(data.get("pending_os_updates", []), ensure_ascii=False)[:500])
     try:
         cur = db.cursor()
         computer = cur.execute("SELECT id FROM computers WHERE hostname = ?", (hostname,)).fetchone()
@@ -699,6 +712,7 @@ def generate_exe():
         flash("Błąd serwera: Program 'pyinstaller' nie jest zainstalowany.", "error")
         return redirect(url_for('settings'))
 
+
     config = {
         "api_endpoint_1": request.form.get('api_endpoint_1', ''),
         "api_endpoint_2": request.form.get('api_endpoint_2', ''),
@@ -707,6 +721,9 @@ def generate_exe():
         "report_interval": int(request.form.get('report_interval', 240)),
         "winget_path": request.form.get('winget_path', ''),  # jeśli masz
     }
+
+    logging.info(
+        f"GENERATOR: endpoint1={config['api_endpoint_1']} endpoint2={config['api_endpoint_2']} key={config['api_key']}")
 
     final_agent_code = AGENT_CODE_FINAL.replace('__API_ENDPOINT_1__', config['api_endpoint_1']) \
         .replace('__API_ENDPOINT_2__', config['api_endpoint_2']) \
