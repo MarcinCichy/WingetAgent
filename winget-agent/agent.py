@@ -1,33 +1,33 @@
+import os
+from dotenv import load_dotenv
+
+# Ładuj zmienne z pliku .env
+load_dotenv()
+
 import subprocess
 import json
 import socket
 import requests
 import time
 import logging
-import os
 import sys
 import threading
 
-# --- KONFIGURACJA (podstawiana przez panel) ---
-API_ENDPOINTS = ["http://TWOJ_ADRES_IP:5000/api/report"]
-API_KEY = "TWÓJ_KLUCZ_API"
-LOOP_INTERVAL_SECONDS = 60
-FULL_REPORT_INTERVAL_LOOPS = 60
-WINGET_PATH_CONF = r""
+# ======= KONFIGURACJA Z .env =======
+API_ENDPOINTS = [os.environ.get("AGENT_API_ENDPOINT", "").strip()]  # lista, możesz łatwo dodać wsparcie wielu serwerów
+API_KEY = os.environ.get("API_KEY", "")
+LOOP_INTERVAL_SECONDS = int(os.environ.get("AGENT_LOOP_INTERVAL", "60"))
+FULL_REPORT_INTERVAL_LOOPS = int(os.environ.get("AGENT_FULL_REPORT_INTERVAL", "60"))
+WINGET_PATH_CONF = os.environ.get("WINGET_PATH_CONF", "")
 
-# --- Automatyczne wykrywanie lokalizacji winget.exe ---
+# ======= RESZTA KODU AGENTA =======
 def find_winget_path():
-    # 1. Sprawdź czy jest ustawiona ścieżka z konfiguracji (panel)
     if WINGET_PATH_CONF and os.path.isfile(WINGET_PATH_CONF):
         return WINGET_PATH_CONF
-
-    # 2. Szukaj w systemowym PATH
     for path_dir in os.environ.get("PATH", "").split(os.pathsep):
         candidate = os.path.join(path_dir, "winget.exe")
         if os.path.isfile(candidate):
             return candidate
-
-    # 3. Szukaj we wszystkich znanych folderach WindowsApps użytkowników
     try:
         user_root = os.path.expandvars(r"C:\\Users")
         if os.path.isdir(user_root):
@@ -37,8 +37,6 @@ def find_winget_path():
                     return winapps
     except Exception:
         pass
-
-    # 4. Ostatnia próba: po prostu wywołaj "where winget"
     try:
         result = subprocess.run(["where", "winget"], capture_output=True, text=True, encoding='utf-8')
         if result.returncode == 0:
@@ -47,7 +45,6 @@ def find_winget_path():
                     return line.strip()
     except Exception:
         pass
-
     return None
 
 WINGET_PATH = find_winget_path()
@@ -194,6 +191,19 @@ def collect_and_report():
         "reboot_required": get_reboot_status(), "installed_apps": get_installed_apps(),
         "available_app_updates": get_available_updates(), "pending_os_updates": get_windows_updates()
     }
+    logging.info("[DEBUG] AGENT wysyła payload: installed_apps=%d, available_app_updates=%d, pending_os_updates=%d",
+                 len(payload.get("installed_apps", [])),
+                 len(payload.get("available_app_updates", [])),
+                 len(payload.get("pending_os_updates", [])) if isinstance(payload.get("pending_os_updates", []),
+                                                                          list) else 1
+                 )
+    # (opcjonalnie, dla pełnej treści, np. pierwsze 3 aplikacje)
+    logging.info("[DEBUG] Przykład installed_apps: %s",
+                 json.dumps(payload.get("installed_apps", [])[:3], ensure_ascii=False))
+    logging.info("[DEBUG] Przykład available_app_updates: %s",
+                 json.dumps(payload.get("available_app_updates", [])[:3], ensure_ascii=False))
+    logging.info("[DEBUG] Przykład pending_os_updates: %s",
+                 json.dumps(payload.get("pending_os_updates", []), ensure_ascii=False)[:500])
     headers = {"Content-Type": "application/json", "X-API-Key": API_KEY}
     results = []
 
