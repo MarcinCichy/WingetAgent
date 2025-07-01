@@ -16,14 +16,24 @@
 
     <form action="{{ url_for('generate_exe') }}" method="POST" class="settings-form">
         <div class="form-group">
-            <label for="api_endpoint">Adres URL serwera (API Endpoint):</label>
-            <input type="text" id="api_endpoint" name="api_endpoint" value="http://TWOJ_ADRES_IP:5000/api/report" required>
-            <small>Wprowadź publiczny lub sieciowy adres IP komputera, na którym działa serwer.</small>
+            <label for="api_endpoint1">Adres serwera 1 (API Endpoint):</label>
+            <input type="text" id="api_endpoint1" name="api_endpoint1" value="http://TWOJ_ADRES_IP:5000/api/report" required>
+            <small>Podstawowy adres serwera do raportowania.</small>
+        </div>
+        <div class="form-group">
+            <label for="api_endpoint2">Adres serwera 2 (opcjonalnie):</label>
+            <input type="text" id="api_endpoint2" name="api_endpoint2" value="">
+            <small>Drugi serwer (jeśli używasz dwóch paneli administratora).</small>
         </div>
         <div class="form-group">
             <label for="api_key">Klucz API (API Key):</label>
             <input type="text" id="api_key" name="api_key" value="{{ server_api_key }}" required>
             <small>Klucz API musi być identyczny jak ten na serwerze.</small>
+        </div>
+        <div class="form-group">
+            <label for="winget_path">Alternatywna ścieżka do winget.exe (opcjonalnie):</label>
+            <input type="text" id="winget_path" name="winget_path" value="">
+            <small>Podaj pełną ścieżkę (np. C:\Program Files\winget\winget.exe), jeśli agent uruchamiany jako usługa nie wykrywa winget automatycznie.</small>
         </div>
         <div class="form-group">
             <label for="loop_interval">Interwał odpytywania (w sekundach):</label>
