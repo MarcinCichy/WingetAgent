@@ -498,7 +498,9 @@ def generate_exe():
             f.write(final_agent_code)
 
         command = [
-            "pyinstaller", "--onefile", "--noconsole",
+            "pyinstaller", "--onefile",
+            "--hidden-import=win32timezone",
+            # "--noconsole", # Pamiętaj o usunięciu/zakomentowaniu tej linii do debugowania
             "--distpath", os.path.join(build_dir, 'dist'),
             "--workpath", os.path.join(build_dir, 'build'),
             "--specpath", build_dir,
